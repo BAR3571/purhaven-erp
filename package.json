@@ -1,0 +1,20 @@
+{
+  "name": "purhaven-erp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Purhaven back-office: warehouse, customers, suppliers, orders, stock, reports",
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4",
+    "bcryptjs": "^2.4.3",
+    "cookie": "^1.0.2",
+    "nodemailer": "^6.9.16",
+    "pdfkit": "^0.15.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
