@@ -1,12 +1,12 @@
 import { requireUser } from '../../lib/session.js';
-import { getPurhavenSiteSql } from '../../lib/purhaven-site.js';
+import { getPurHavenSiteSql } from '../../lib/purhaven-site.js';
 
 export default async function handler(req, res) {
   const user = await requireUser(req, res);
   if (!user) return;
 
   let siteSql;
-  try { siteSql = getPurhavenSiteSql(); }
+  try { siteSql = getPurHavenSiteSql(); }
   catch (err) { return res.status(400).json({ error: err.message }); }
 
   try {

@@ -39,7 +39,7 @@ function renderTopbar(active) {
   ).join('');
   return `
     <header class="topbar">
-      <a href="/" class="brand"><span class="dot"></span>Purhaven</a>
+      <a href="/" class="brand"><span class="dot"></span>PurHaven</a>
       <div class="global-search">
         <input type="search" id="global-q" placeholder="🔍 Search customers, suppliers, products… (⌘K)" autocomplete="off">
         <div id="global-results" class="global-results"></div>

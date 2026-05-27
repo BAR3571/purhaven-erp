@@ -1,6 +1,6 @@
 import { sql } from '../../lib/db.js';
 import { requireUser } from '../../lib/session.js';
-import { getPurhavenSiteSql } from '../../lib/purhaven-site.js';
+import { getPurHavenSiteSql } from '../../lib/purhaven-site.js';
 import { nextSoNumber, recomputeSoTotals } from '../../lib/sales-orders.js';
 import { nextCustomerAccountCode } from '../../lib/customers.js';
 
@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
 
   let siteSql;
-  try { siteSql = getPurhavenSiteSql(); }
+  try { siteSql = getPurHavenSiteSql(); }
   catch (err) { return res.status(400).json({ error: err.message }); }
 
   // Pull paid+ orders from the website with customer + items

@@ -1,6 +1,6 @@
-# Purhaven Back Office
+# PurHaven Back Office
 
-ERP-style back office for Purhaven (UVCVTM Limited): warehouse, customers, suppliers, sales orders, purchase orders, goods in, despatch, products & stock, reports.
+ERP-style back office for PurHaven (UVCVTM Limited): warehouse, customers, suppliers, sales orders, purchase orders, goods in, despatch, products & stock, reports.
 
 Deployed at **erp.purhaven.co.uk** (Vercel) with a dedicated Neon Postgres database.
 
