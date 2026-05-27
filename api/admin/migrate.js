@@ -317,7 +317,12 @@ const MIGRATIONS = [
   )`,
 
   `CREATE INDEX IF NOT EXISTS erp_sol_so_idx ON erp_sales_order_lines(so_id)`,
-  `CREATE INDEX IF NOT EXISTS erp_sol_product_idx ON erp_sales_order_lines(product_id)`
+  `CREATE INDEX IF NOT EXISTS erp_sol_product_idx ON erp_sales_order_lines(product_id)`,
+
+  // ---------- Website import (Task #59): email + phone on customer for matching ----------
+  `ALTER TABLE erp_customers ADD COLUMN IF NOT EXISTS email TEXT`,
+  `ALTER TABLE erp_customers ADD COLUMN IF NOT EXISTS phone TEXT`,
+  `CREATE INDEX IF NOT EXISTS erp_customers_email_idx ON erp_customers(LOWER(email))`
 ];
 
 export default async function handler(req, res) {

@@ -17,9 +17,12 @@
 <div class="page-header">
   <h1>📦 Sales Orders</h1>
   <div class="actions">
+    <button type="button" class="btn btn-ghost" id="import-website-btn" title="Pull paid orders from purhaven.co.uk into draft SOs">↘ Import from website</button>
     <button type="button" class="btn btn-primary" id="new-so-btn">+ New Sales Order</button>
   </div>
 </div>
+
+<div id="import-result" style="margin-bottom:12px;"></div>
 
 <div class="search-row">
   <input type="search" id="q" placeholder="Search SO#, customer, ref…">
@@ -120,6 +123,32 @@
     const cd = await create.json();
     if (!cd.ok) { alert('Failed: ' + cd.error); return; }
     window.location.href = '/orders/sales-orders/detail?id=' + cd.sales_order.id;
+  });
+
+  document.getElementById('import-website-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('import-website-btn');
+    const resultEl = document.getElementById('import-result');
+    btn.disabled = true;
+    const oldLabel = btn.textContent;
+    btn.textContent = 'Importing…';
+    resultEl.innerHTML = '';
+    try {
+      const r = await fetch('/api/admin/import-website-orders', { method: 'POST' });
+      const d = await r.json();
+      if (!d.ok) {
+        resultEl.innerHTML = `<div class="card accent-pink" style="padding:10px 14px;"><span style="color:#991b1b">${d.error || 'Import failed'}</span></div>`;
+      } else {
+        const errBit = d.errors?.length ? ` · ${d.errors.length} errored` : '';
+        const noteBit = d.note ? ` — ${d.note}` : '';
+        resultEl.innerHTML = `<div class="card accent-green" style="padding:10px 14px;">Imported ${d.imported}, skipped ${d.skipped} (already in ERP)${errBit}${noteBit}</div>`;
+        load();
+      }
+    } catch (err) {
+      resultEl.innerHTML = `<div class="card accent-pink" style="padding:10px 14px;"><span style="color:#991b1b">Network error: ${err.message}</span></div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = oldLabel;
+    }
   });
 
   q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 200); });
