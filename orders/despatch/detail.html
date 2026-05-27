@@ -148,7 +148,14 @@
   function fillActions(dn) {
     const buttons = [];
     if (['pending','picking','packed','despatched'].includes(dn.status)) {
-      buttons.push(`<a class="btn btn-ghost" href="/api/despatches/${dn.id}/paperwork/picking-note" target="_blank" rel="noopener">🖨️ Picking note PDF</a>`);
+      buttons.push(`<a class="btn btn-ghost" href="/api/despatches/${dn.id}/paperwork/picking-note" target="_blank" rel="noopener">🖨️ Picking note</a>`);
+    }
+    if (['packed','despatched'].includes(dn.status)) {
+      buttons.push(`<a class="btn btn-ghost" href="/api/despatches/${dn.id}/paperwork/packing-list" target="_blank" rel="noopener">📦 Packing list</a>`);
+      buttons.push(`<a class="btn btn-ghost" href="/api/despatches/${dn.id}/paperwork/commercial-invoice" target="_blank" rel="noopener">💷 Commercial invoice</a>`);
+    }
+    if (dn.status === 'despatched') {
+      buttons.push(`<a class="btn btn-ghost" href="/api/despatches/${dn.id}/paperwork/despatch-note" target="_blank" rel="noopener">📄 Despatch note</a>`);
     }
     if (dn.status === 'pending') buttons.push(`<button type="button" class="btn btn-primary" data-act="start-picking">▶ Start picking</button>`);
     if (dn.status === 'picking') buttons.push(`<button type="button" class="btn btn-primary" data-act="confirm-picking">✓ Confirm pick &amp; packaging</button>`);
