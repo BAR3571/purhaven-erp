@@ -97,9 +97,15 @@
           <div class="image-frame" id="image-frame">No image</div>
           <div class="image-controls">
             <input type="file" id="img-file" accept="image/*" style="display:none;">
-            <button type="button" class="btn btn-sky" id="img-pick-btn">Choose image…</button>
-            <button type="button" class="btn btn-ghost" id="img-remove-btn" style="display:none;">Remove</button>
-            <div class="help">Auto-resized to 800px max, ~70 KB. Or paste a URL in Notes if hosting elsewhere.</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+              <button type="button" class="btn btn-sky" id="img-pick-btn">Choose image…</button>
+              <button type="button" class="btn btn-ghost" id="img-remove-btn" style="display:none;">Remove</button>
+            </div>
+            <div style="display:flex;gap:6px;">
+              <input type="url" id="img-url" placeholder="…or paste image URL (e.g. https://www.purhaven.co.uk/assets/images/products/maxvac-medi-8.jpg)" style="flex:1;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);font-size:0.82rem;">
+              <button type="button" class="btn btn-ghost" id="img-url-use">Use URL</button>
+            </div>
+            <div class="help">Prefer the website URL — keeps one source of truth. File upload stores a data URL in the DB.</div>
           </div>
         </div>
 
@@ -362,6 +368,9 @@
     document.getElementById('f-requires-serial').checked = !!p.requires_serial;
     document.getElementById('f-service-interval').value = p.service_interval_months ?? '';
     setImage(p.image_url || null);
+    // Surface a non-data URL in the paste box so the user can edit it
+    const urlBox = document.getElementById('img-url');
+    urlBox.value = (p.image_url && !p.image_url.startsWith('data:')) ? p.image_url : '';
   }
 
   function setImage(url) {
@@ -376,7 +385,14 @@
   }
 
   imgPickBtn.addEventListener('click', () => imgFile.click());
-  imgRemoveBtn.addEventListener('click', () => setImage(null));
+  imgRemoveBtn.addEventListener('click', () => { setImage(null); document.getElementById('img-url').value = ''; });
+
+  document.getElementById('img-url-use').addEventListener('click', () => {
+    const url = document.getElementById('img-url').value.trim();
+    if (!url) { setStatus('Paste a URL first', 'err'); return; }
+    if (!/^https?:\/\//.test(url)) { setStatus('URL must start with http(s)://', 'err'); return; }
+    setImage(url);
+  });
   imgFile.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
