@@ -44,6 +44,10 @@ export default async function handler(req, res) {
     if (!sku) return res.status(400).json({ error: 'SKU is required' });
     if (!name) return res.status(400).json({ error: 'Name is required' });
 
+    if (b.image_url && b.image_url.length > 350_000) {
+      return res.status(413).json({ error: 'Image too large — resize to under ~250KB' });
+    }
+
     try {
       const rows = await sql`
         INSERT INTO erp_products (
@@ -51,7 +55,9 @@ export default async function handler(req, res) {
           barcode, ean, hs_code, country_of_origin,
           weight_g, width_mm, height_mm, depth_mm, lead_time_weeks,
           vat_rate_percent, cost_price_pence, sale_price_pence, currency,
-          min_stock_level, notes, created_by
+          min_stock_level, notes,
+          image_url, requires_serial, service_interval_months,
+          created_by
         ) VALUES (
           ${sku}, ${name}, ${b.description || null}, ${b.category || null}, ${b.brand || null},
           ${b.parent_id || null}, ${b.manufacturer_id || null},
@@ -60,7 +66,9 @@ export default async function handler(req, res) {
           ${b.lead_time_weeks ?? null},
           ${b.vat_rate_percent ?? 20}, ${b.cost_price_pence ?? null}, ${b.sale_price_pence ?? null},
           ${b.currency || 'GBP'},
-          ${b.min_stock_level ?? 0}, ${b.notes || null}, ${user.id}
+          ${b.min_stock_level ?? 0}, ${b.notes || null},
+          ${b.image_url || null}, ${!!b.requires_serial}, ${b.service_interval_months ?? null},
+          ${user.id}
         )
         RETURNING *
       `;

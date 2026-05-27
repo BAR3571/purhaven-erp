@@ -402,6 +402,11 @@ table.data .mono { font-family: ui-monospace, Menlo, monospace; font-size: 0.85e
 .pill-despatched{ background: #d1fae5; color: #065f46; border-color: #34d399; }
 .pill-cancelled { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
 .pill-on-hold   { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+.pill-in-stock  { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+.pill-installed { background: #d1fae5; color: #065f46; border-color: #34d399; }
+.pill-replaced  { background: #e2e8f0; color: #475569; border-color: #cbd5e1; }
+.pill-returned  { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+.pill-scrapped  { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
 
 /* ============ FORMS ============ */
 .field { margin-bottom: 14px; }

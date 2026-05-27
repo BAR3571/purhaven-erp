@@ -222,7 +222,36 @@ const MIGRATIONS = [
   `CREATE INDEX IF NOT EXISTS erp_stock_movements_product_idx ON erp_stock_movements(product_id)`,
   `CREATE INDEX IF NOT EXISTS erp_stock_movements_warehouse_idx ON erp_stock_movements(warehouse_id)`,
   `CREATE INDEX IF NOT EXISTS erp_stock_movements_ref_idx ON erp_stock_movements(reference_type, reference_id)`,
-  `CREATE INDEX IF NOT EXISTS erp_stock_movements_created_idx ON erp_stock_movements(created_at DESC)`
+  `CREATE INDEX IF NOT EXISTS erp_stock_movements_created_idx ON erp_stock_movements(created_at DESC)`,
+
+  // ---------- Product images + serials + service intervals (Task #58) ----------
+  `ALTER TABLE erp_products ADD COLUMN IF NOT EXISTS image_url TEXT`,
+  `ALTER TABLE erp_products ADD COLUMN IF NOT EXISTS requires_serial BOOLEAN NOT NULL DEFAULT FALSE`,
+  `ALTER TABLE erp_products ADD COLUMN IF NOT EXISTS service_interval_months INTEGER`,
+
+  `CREATE TABLE IF NOT EXISTS erp_product_serials (
+    id BIGSERIAL PRIMARY KEY,
+    product_id INTEGER NOT NULL REFERENCES erp_products(id),
+    serial_number TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'in_stock'
+      CHECK (status IN ('in_stock','despatched','installed','replaced','returned','scrapped')),
+    warehouse_id INTEGER REFERENCES erp_warehouses(id),
+    parent_serial_id BIGINT REFERENCES erp_product_serials(id) ON DELETE SET NULL,
+    received_at TIMESTAMPTZ,
+    despatched_at TIMESTAMPTZ,
+    despatched_to_customer_id INTEGER REFERENCES erp_customers(id),
+    service_due_at DATE,
+    service_done_at DATE,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (product_id, serial_number)
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_serials_product_idx ON erp_product_serials(product_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_serials_status_idx ON erp_product_serials(status)`,
+  `CREATE INDEX IF NOT EXISTS erp_serials_due_idx ON erp_product_serials(service_due_at)`,
+  `CREATE INDEX IF NOT EXISTS erp_serials_customer_idx ON erp_product_serials(despatched_to_customer_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_serials_parent_idx ON erp_product_serials(parent_serial_id)`
 ];
 
 export default async function handler(req, res) {

@@ -25,6 +25,41 @@
   .stock-row .num.alloc { color: var(--ink-soft); font-weight: 500; }
   .err { color: #991b1b; }
   .ok { color: #065f46; }
+
+  .image-block {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 16px;
+    align-items: start;
+    margin-bottom: 16px;
+  }
+  .image-frame {
+    width: 140px; height: 140px;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    background: var(--surface-2);
+    color: var(--ink-dim);
+    font-size: 0.78rem;
+    text-align: center;
+  }
+  .image-frame img { width: 100%; height: 100%; object-fit: contain; }
+  .image-controls .help { color: var(--ink-dim); font-size: 0.78rem; margin-top: 4px; }
+
+  .serial-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto auto;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 4px;
+    border-bottom: 1px solid var(--border-soft);
+    font-size: 0.88rem;
+  }
+  .serial-row:last-child { border-bottom: none; }
+  .serial-row .sn { font-family: ui-monospace, Menlo, monospace; font-weight: 600; }
+  .serial-row .due-soon { color: #92400e; font-weight: 600; }
+  .serial-row .due-past { color: var(--red); font-weight: 700; }
   .movements {
     max-height: 380px;
     overflow-y: auto;
@@ -58,6 +93,16 @@
     <div class="card accent-sky">
       <h2 style="margin-top:0">Details</h2>
       <form id="product-form">
+        <div class="image-block">
+          <div class="image-frame" id="image-frame">No image</div>
+          <div class="image-controls">
+            <input type="file" id="img-file" accept="image/*" style="display:none;">
+            <button type="button" class="btn btn-sky" id="img-pick-btn">Choose image…</button>
+            <button type="button" class="btn btn-ghost" id="img-remove-btn" style="display:none;">Remove</button>
+            <div class="help">Auto-resized to 800px max, ~70 KB. Or paste a URL in Notes if hosting elsewhere.</div>
+          </div>
+        </div>
+
         <div class="field-row">
           <div class="field">
             <label for="f-sku">SKU *</label>
@@ -161,6 +206,20 @@
             <input type="number" id="f-lead" name="lead_time_weeks" min="0">
           </div>
         </div>
+
+        <div class="field-row">
+          <div class="field" style="display:flex;align-items:flex-end;">
+            <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink);margin-bottom:6px;">
+              <input type="checkbox" id="f-requires-serial">
+              Requires serial number
+            </label>
+          </div>
+          <div class="field">
+            <label for="f-service-interval">Service interval (months)</label>
+            <input type="number" id="f-service-interval" min="0" placeholder="e.g. 12 for annual filter / lamp">
+          </div>
+        </div>
+
         <div class="field">
           <label for="f-notes">Notes</label>
           <textarea id="f-notes" name="notes" rows="2"></textarea>
@@ -207,6 +266,14 @@
       <h2 style="margin-top:0">Parts &amp; accessories</h2>
       <div id="children"></div>
     </div>
+
+    <div class="card accent-pink" id="serials-card" style="display:none;">
+      <div class="row" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <h2 style="margin:0;">Serials &amp; traceability</h2>
+        <button type="button" class="btn btn-sky" id="add-serial-btn">+ Add serial</button>
+      </div>
+      <div id="serials"></div>
+    </div>
   </div>
 </div>
 
@@ -230,6 +297,15 @@
   const childrenCard = document.getElementById('children-card');
   const childrenEl = document.getElementById('children');
   const adjWarehouseSel = document.getElementById('adj-warehouse');
+  const imageFrame = document.getElementById('image-frame');
+  const imgFile = document.getElementById('img-file');
+  const imgPickBtn = document.getElementById('img-pick-btn');
+  const imgRemoveBtn = document.getElementById('img-remove-btn');
+  const serialsCard = document.getElementById('serials-card');
+  const serialsEl = document.getElementById('serials');
+
+  // Holds the current image as a data URL or external URL. Saved with the product.
+  let currentImage = null;
 
   function setStatus(msg, cls) {
     statusEl.innerHTML = msg
@@ -283,6 +359,62 @@
     document.getElementById('f-weight').value   = p.weight_g ?? '';
     document.getElementById('f-lead').value     = p.lead_time_weeks ?? '';
     document.getElementById('f-notes').value    = p.notes || '';
+    document.getElementById('f-requires-serial').checked = !!p.requires_serial;
+    document.getElementById('f-service-interval').value = p.service_interval_months ?? '';
+    setImage(p.image_url || null);
+  }
+
+  function setImage(url) {
+    currentImage = url || null;
+    if (currentImage) {
+      imageFrame.innerHTML = `<img src="${currentImage}" alt="">`;
+      imgRemoveBtn.style.display = 'inline-flex';
+    } else {
+      imageFrame.innerHTML = 'No image';
+      imgRemoveBtn.style.display = 'none';
+    }
+  }
+
+  imgPickBtn.addEventListener('click', () => imgFile.click());
+  imgRemoveBtn.addEventListener('click', () => setImage(null));
+  imgFile.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { setStatus('Pick an image file', 'err'); return; }
+    try {
+      const dataUrl = await resizeImageToDataUrl(file, 800, 0.75);
+      setImage(dataUrl);
+      imgFile.value = '';
+    } catch (err) {
+      setStatus('Image processing failed: ' + err.message, 'err');
+    }
+  });
+
+  function resizeImageToDataUrl(file, maxDim, quality) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Could not read file'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('Not a valid image'));
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            const scale = maxDim / Math.max(width, height);
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
   }
 
   function renderStock(stock) {
@@ -355,7 +487,99 @@
     renderStock(d.product.stock);
     renderMovements(d.product.movements);
     renderChildren(d.product.children);
+    renderSerials(d.product.serials, d.product.requires_serial);
   }
+
+  function dueClass(dueAt) {
+    if (!dueAt) return '';
+    const due = new Date(dueAt);
+    const now = new Date();
+    const days = (due - now) / 86400000;
+    if (days < 0)  return 'due-past';
+    if (days < 30) return 'due-soon';
+    return '';
+  }
+
+  function renderSerials(serials, requiresSerial) {
+    if (!serials || (serials.length === 0 && !requiresSerial)) {
+      serialsCard.style.display = 'none';
+      return;
+    }
+    serialsCard.style.display = 'block';
+    if (serials.length === 0) {
+      serialsEl.innerHTML = '<p style="color:var(--ink-dim);margin:0;">No serials yet. Click <strong>+ Add serial</strong> when stock arrives.</p>';
+      return;
+    }
+    serialsEl.innerHTML = serials.map(s => `
+      <div class="serial-row" data-sid="${s.id}">
+        <span class="sn">${fmt(s.serial_number)}</span>
+        <span>
+          ${pill(s.status)}
+          ${s.customer_name ? ' · ' + fmt(s.customer_name) : ''}
+        </span>
+        <span style="color:var(--ink-dim);font-size:0.78rem;">${s.despatched_at ? 'shipped ' + dateOnly(s.despatched_at) : ''}</span>
+        <span class="${dueClass(s.service_due_at)}">${s.service_due_at ? 'service due ' + dateOnly(s.service_due_at) : ''}</span>
+        <span style="display:flex;gap:4px;">
+          <button class="btn btn-ghost" data-action="edit-serial" data-sid="${s.id}">Edit</button>
+          <button class="btn btn-danger" data-action="del-serial" data-sid="${s.id}">×</button>
+        </span>
+      </div>
+    `).join('');
+  }
+
+  function pill(status) {
+    const safe = (status || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    return `<span class="pill pill-${safe}">${status || '—'}</span>`;
+  }
+
+  document.getElementById('add-serial-btn').addEventListener('click', async () => {
+    const serial = prompt('Serial number?');
+    if (!serial) return;
+    const status = prompt('Status? (in_stock / despatched / installed)', 'in_stock') || 'in_stock';
+    let despatched_at = null;
+    let despatched_to_customer_id = null;
+    if (status === 'despatched' || status === 'installed') {
+      const d = prompt('Despatch date? (YYYY-MM-DD)', new Date().toISOString().slice(0, 10));
+      if (d) despatched_at = d;
+      const custId = prompt('Customer ID? (numeric, optional)');
+      if (custId) despatched_to_customer_id = parseInt(custId, 10);
+    }
+    const r = await fetch('/api/products/' + id + '/serials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ serial_number: serial, status, despatched_at, despatched_to_customer_id })
+    });
+    const d = await r.json();
+    if (!d.ok) { setStatus('Add failed: ' + d.error, 'err'); return; }
+    loadProduct();
+  });
+
+  serialsEl.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const sid = btn.dataset.sid;
+    if (btn.dataset.action === 'del-serial') {
+      if (!confirm('Delete this serial? Audit history is preserved elsewhere.')) return;
+      const r = await fetch('/api/serials/' + sid, { method: 'DELETE' });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Delete failed: ' + d.error, 'err'); return; }
+      loadProduct();
+    } else if (btn.dataset.action === 'edit-serial') {
+      const status = prompt('Status? (in_stock / despatched / installed / replaced / returned / scrapped)') ?? null;
+      if (status === null) return;
+      const despatched_at = prompt('Despatch date? (YYYY-MM-DD or blank)') || null;
+      const service_due_at = prompt('Service due date? (YYYY-MM-DD or blank — leave blank to auto-compute from despatch + interval)') || null;
+      const notes = prompt('Notes?') || null;
+      const r = await fetch('/api/serials/' + sid, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, despatched_at, service_due_at, notes })
+      });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Update failed: ' + d.error, 'err'); return; }
+      loadProduct();
+    }
+  });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -384,7 +608,10 @@
       min_stock_level: parseInt(document.getElementById('f-min').value, 10) || 0,
       weight_g:    parseInt(document.getElementById('f-weight').value, 10) || null,
       lead_time_weeks: parseInt(document.getElementById('f-lead').value, 10) || null,
-      notes:       document.getElementById('f-notes').value || null
+      notes:       document.getElementById('f-notes').value || null,
+      image_url:   currentImage,
+      requires_serial: document.getElementById('f-requires-serial').checked,
+      service_interval_months: parseInt(document.getElementById('f-service-interval').value, 10) || null
     };
 
     const url = isNew ? '/api/products' : '/api/products/' + id;

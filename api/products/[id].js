@@ -20,6 +20,10 @@ export default async function handler(req, res) {
     const name = (b.name || '').trim();
     if (!name) return res.status(400).json({ error: 'Name is required' });
 
+    if (b.image_url && b.image_url.length > 350_000) {
+      return res.status(413).json({ error: 'Image too large — resize to under ~250KB' });
+    }
+
     const rows = await sql`
       UPDATE erp_products SET
         name = ${name},
@@ -43,6 +47,9 @@ export default async function handler(req, res) {
         currency = ${b.currency || 'GBP'},
         min_stock_level = ${b.min_stock_level ?? 0},
         notes = ${b.notes || null},
+        image_url = ${b.image_url ?? null},
+        requires_serial = ${!!b.requires_serial},
+        service_interval_months = ${b.service_interval_months ?? null},
         updated_at = NOW()
       WHERE id = ${id}
       RETURNING *

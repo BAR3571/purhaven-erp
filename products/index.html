@@ -42,6 +42,7 @@
     <table class="data">
       <thead>
         <tr>
+          <th style="width:52px"></th>
           <th>SKU</th>
           <th>Name</th>
           <th>Brand</th>
@@ -56,7 +57,7 @@
         </tr>
       </thead>
       <tbody id="rows">
-        <tr><td colspan="11" class="empty">Loading…</td></tr>
+        <tr><td colspan="12" class="empty">Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -79,12 +80,12 @@
     if (brandFilter.value) params.set('brand', brandFilter.value);
     if (categoryFilter.value) params.set('category', categoryFilter.value);
     if (incInactive.checked) params.set('includeInactive', '1');
-    rowsEl.innerHTML = '<tr><td colspan="11" class="empty">Loading…</td></tr>';
+    rowsEl.innerHTML = '<tr><td colspan="12" class="empty">Loading…</td></tr>';
     const r = await fetch('/api/products?' + params.toString());
     const d = await r.json();
-    if (!d.ok) { rowsEl.innerHTML = `<tr><td colspan="11" class="empty">Error: ${d.error}</td></tr>`; return; }
+    if (!d.ok) { rowsEl.innerHTML = `<tr><td colspan="12" class="empty">Error: ${d.error}</td></tr>`; return; }
     if (d.products.length === 0) {
-      rowsEl.innerHTML = '<tr><td colspan="11" class="empty"><h3>No products yet</h3><p>Click <strong>+ New Product</strong> to add the first one.</p></td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="12" class="empty"><h3>No products yet</h3><p>Click <strong>+ New Product</strong> to add the first one.</p></td></tr>';
       return;
     }
 
@@ -100,10 +101,14 @@
       const available = onHand - allocated;
       const minLevel = parseInt(p.min_stock_level || 0, 10);
       const lowStock = minLevel > 0 && available <= minLevel;
+      const thumb = p.image_url
+        ? `<img src="${p.image_url}" alt="" style="width:40px;height:40px;object-fit:contain;border-radius:6px;background:var(--surface-2);">`
+        : `<div style="width:40px;height:40px;border-radius:6px;background:var(--surface-2);border:1px dashed var(--border);"></div>`;
       return `
         <tr>
+          <td>${thumb}</td>
           <td class="mono"><a href="/products/detail?id=${p.id}">${fmt(p.sku)}</a></td>
-          <td><a href="/products/detail?id=${p.id}"><strong>${fmt(p.name)}</strong></a></td>
+          <td><a href="/products/detail?id=${p.id}"><strong>${fmt(p.name)}</strong></a>${p.requires_serial ? ' <span class="pill pill-confirmed" style="font-size:0.62rem;">SN</span>' : ''}</td>
           <td>${fmt(p.brand)}</td>
           <td>${fmt(p.category)}</td>
           <td>${fmt(p.manufacturer_name)}</td>
