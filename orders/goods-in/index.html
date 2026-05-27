@@ -11,16 +11,82 @@
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body data-page="orders">
+
 <div id="tabs-mount"></div>
-<div class="page-header"><h1>🛒 Goods In</h1></div>
-<div class="card accent-green">
-  <h2 style="margin-top:0">Coming next</h2>
-  <p style="color:var(--ink-soft);margin:0;">Task #50. Receive against a PO with full / partial quantities, capture batch numbers, prompt for serial numbers on <em>requires_serial</em> SKUs, auto-update PO status, write stock_movement rows.</p>
+
+<div class="page-header">
+  <h1>🛒 Goods In</h1>
 </div>
+
+<div class="search-row">
+  <input type="search" id="q" placeholder="Search GI#, PO#, supplier, tracking…">
+</div>
+
+<div class="card" style="padding: 0;">
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>GI #</th>
+          <th>PO #</th>
+          <th>Supplier</th>
+          <th>Warehouse</th>
+          <th>Received</th>
+          <th>Received by</th>
+          <th style="text-align:right">Lines</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="rows">
+        <tr><td colspan="9" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<p style="color:var(--ink-soft);font-size:0.85rem;margin-top:16px;">
+  Receipts are created from a Purchase Order using the <strong>Receive</strong> button on the PO detail page.
+</p>
+
 <script type="module">
-  import { mountShell, renderOrdersTabs } from '/app.js';
+  import { mountShell, renderOrdersTabs, fmt, dateOnly } from '/app.js';
   await mountShell();
   document.getElementById('tabs-mount').innerHTML = `<div class="orders-tabs">${renderOrdersTabs('goods-in')}</div>`;
+
+  const rowsEl = document.getElementById('rows');
+  const q = document.getElementById('q');
+  let timer;
+
+  async function load() {
+    const params = new URLSearchParams();
+    if (q.value.trim()) params.set('q', q.value.trim());
+    rowsEl.innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
+    const r = await fetch('/api/goods-in?' + params.toString());
+    const d = await r.json();
+    if (!d.ok) { rowsEl.innerHTML = `<tr><td colspan="9" class="empty">Error: ${d.error}</td></tr>`; return; }
+    if (d.goods_in.length === 0) {
+      rowsEl.innerHTML = '<tr><td colspan="9" class="empty"><h3>No receipts yet</h3><p>Receive stock from a <a href="/orders/purchase-orders">Purchase Order</a> to create the first GI record.</p></td></tr>';
+      return;
+    }
+    rowsEl.innerHTML = d.goods_in.map(gi => `
+      <tr>
+        <td class="mono"><a href="/orders/goods-in/detail?id=${gi.id}">${fmt(gi.gi_number)}</a></td>
+        <td class="mono">${gi.po_id ? `<a href="/orders/purchase-orders/detail?id=${gi.po_id}">${fmt(gi.po_number)}</a>` : '<span style="color:var(--ink-dim)">—</span>'}</td>
+        <td>${fmt(gi.supplier_name)}</td>
+        <td>${fmt(gi.warehouse_code)}</td>
+        <td>${dateOnly(gi.received_at)}</td>
+        <td>${fmt(gi.received_by_name || gi.received_by_email)}</td>
+        <td style="text-align:right">${gi.line_count}</td>
+        <td><span class="pill pill-${gi.status === 'received' ? 'received' : (gi.status === 'discrepancy' ? 'on-hold' : 'cancelled')}">${gi.status}</span></td>
+        <td><a href="/orders/goods-in/detail?id=${gi.id}" class="btn btn-ghost">View →</a></td>
+      </tr>
+    `).join('');
+  }
+
+  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 200); });
+  load();
 </script>
+
 </body>
 </html>

@@ -386,7 +386,49 @@ const MIGRATIONS = [
     created_by INTEGER REFERENCES erp_users(id)
   )`,
   `CREATE INDEX IF NOT EXISTS erp_so_po_so_line_idx ON erp_so_po_allocations(so_line_id)`,
-  `CREATE INDEX IF NOT EXISTS erp_so_po_po_line_idx ON erp_so_po_allocations(po_line_id)`
+  `CREATE INDEX IF NOT EXISTS erp_so_po_po_line_idx ON erp_so_po_allocations(po_line_id)`,
+
+  // ---------- Goods In (Phase 1 · Task #50) ----------
+  `CREATE TABLE IF NOT EXISTS erp_goods_in (
+    id SERIAL PRIMARY KEY,
+    gi_number TEXT UNIQUE NOT NULL,
+    po_id INTEGER REFERENCES erp_purchase_orders(id),
+    warehouse_id INTEGER NOT NULL REFERENCES erp_warehouses(id),
+    status TEXT NOT NULL DEFAULT 'received'
+      CHECK (status IN ('received','discrepancy','cancelled')),
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    received_by INTEGER REFERENCES erp_users(id),
+    carrier TEXT,
+    tracking_number TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_gi_po_idx ON erp_goods_in(po_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_gi_warehouse_idx ON erp_goods_in(warehouse_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_gi_received_at_idx ON erp_goods_in(received_at DESC)`,
+
+  `CREATE TABLE IF NOT EXISTS erp_goods_in_lines (
+    id SERIAL PRIMARY KEY,
+    gi_id INTEGER NOT NULL REFERENCES erp_goods_in(id) ON DELETE CASCADE,
+    po_line_id INTEGER REFERENCES erp_purchase_order_lines(id),
+    product_id INTEGER REFERENCES erp_products(id),
+    sku TEXT,
+    description TEXT,
+    qty_expected INTEGER,
+    qty_received INTEGER NOT NULL DEFAULT 0,
+    condition TEXT NOT NULL DEFAULT 'good' CHECK (condition IN ('good','damaged','quarantine')),
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_gil_gi_idx ON erp_goods_in_lines(gi_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_gil_po_line_idx ON erp_goods_in_lines(po_line_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_gil_product_idx ON erp_goods_in_lines(product_id)`,
+
+  // Track which goods-in receipt minted a serial
+  `ALTER TABLE erp_product_serials ADD COLUMN IF NOT EXISTS goods_in_line_id INTEGER REFERENCES erp_goods_in_lines(id) ON DELETE SET NULL`,
+  `CREATE INDEX IF NOT EXISTS erp_serials_gil_idx ON erp_product_serials(goods_in_line_id)`
 ];
 
 export default async function handler(req, res) {

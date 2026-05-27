@@ -167,10 +167,126 @@
   function fillActions(po) {
     const buttons = [];
     if (po.status === 'draft') buttons.push(`<button type="button" class="btn btn-primary" data-act="release">Release to supplier</button>`);
+    if (['released', 'part_received'].includes(po.status)) buttons.push(`<button type="button" class="btn btn-primary" data-act="receive">↘ Receive stock</button>`);
     if (['draft', 'released', 'part_received'].includes(po.status)) buttons.push(`<button type="button" class="btn btn-danger" data-act="cancel">Cancel</button>`);
     if (['part_received', 'received'].includes(po.status)) buttons.push(`<button type="button" class="btn btn-ghost" data-act="close">Close</button>`);
     if (po.status === 'draft' && po.lines.length === 0) buttons.push(`<button type="button" class="btn btn-danger" data-act="delete">Delete</button>`);
     actionsEl.innerHTML = buttons.join(' ');
+  }
+
+  function openReceiveModal(po) {
+    const openLines = po.lines.filter(l => (l.quantity_ordered - l.quantity_received) > 0);
+    if (openLines.length === 0) { alert('Nothing left to receive on this PO.'); return; }
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="modal-card" onclick="event.stopPropagation()">
+        <button type="button" class="x" data-close>×</button>
+        <h2 style="margin:0 0 4px;">Receive stock for ${fmt(po.po_number)}</h2>
+        <p style="margin:0 0 14px;color:var(--ink-soft);font-size:0.85rem;">Confirm quantities arriving today. Serial numbers required on serialised products.</p>
+
+        <div class="field-row" style="margin-bottom:8px;">
+          <div class="field" style="margin:0;">
+            <label for="r-carrier">Carrier</label>
+            <input type="text" id="r-carrier" placeholder="e.g. DPD, Royal Mail, supplier own">
+          </div>
+          <div class="field" style="margin:0;">
+            <label for="r-tracking">Tracking #</label>
+            <input type="text" id="r-tracking">
+          </div>
+        </div>
+        <div class="field">
+          <label for="r-notes">Notes</label>
+          <textarea id="r-notes" rows="2" placeholder="Anything unusual about this delivery?"></textarea>
+        </div>
+
+        <div id="r-lines"></div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+          <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+          <button type="button" class="btn btn-primary" id="r-submit">Confirm receipt</button>
+        </div>
+      </div>
+    `;
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop || e.target.dataset.close !== undefined) backdrop.remove();
+    });
+    document.body.appendChild(backdrop);
+
+    const linesEl = backdrop.querySelector('#r-lines');
+    linesEl.innerHTML = openLines.map(l => {
+      const remaining = l.quantity_ordered - l.quantity_received;
+      const needsSerial = !!l.requires_serial;
+      return `
+        <div class="alloc-item" style="grid-template-columns:1fr; padding:10px; border:1px solid var(--border); border-radius:8px; margin-bottom:8px; display:block;" data-pol="${l.id}" data-pid="${l.product_id || ''}" data-needs-serial="${needsSerial ? '1' : ''}">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+            <div>
+              <strong class="sn">${fmt(l.sku)}</strong> · ${fmt(l.description)}
+              <div class="meta">ordered ${l.quantity_ordered} · already received ${l.quantity_received} · ${remaining} remaining${needsSerial ? ' · serialised' : ''}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <input class="num qty-in" type="number" min="0" max="${remaining}" value="${remaining}" style="width:80px;">
+              <select class="cond-in" style="padding:6px;">
+                <option value="good">Good</option>
+                <option value="damaged">Damaged</option>
+                <option value="quarantine">Quarantine</option>
+              </select>
+            </div>
+          </div>
+          ${needsSerial ? `
+            <div class="field" style="margin-top:8px;margin-bottom:0;">
+              <label>Serial numbers (one per line, qty must match)</label>
+              <textarea class="serials-in" rows="3" placeholder="MAP-2026-0001
+MAP-2026-0002"></textarea>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
+
+    backdrop.querySelector('#r-submit').addEventListener('click', async () => {
+      const lines = [];
+      const rows = backdrop.querySelectorAll('[data-pol]');
+      for (const row of rows) {
+        const qty = parseInt(row.querySelector('.qty-in').value, 10);
+        if (!qty || qty < 1) continue;
+        const condition = row.querySelector('.cond-in').value;
+        const serialsTextarea = row.querySelector('.serials-in');
+        const serials = serialsTextarea
+          ? serialsTextarea.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+          : [];
+        lines.push({
+          po_line_id: parseInt(row.dataset.pol, 10),
+          product_id: parseInt(row.dataset.pid, 10) || null,
+          qty_received: qty,
+          condition,
+          serials
+        });
+      }
+      if (lines.length === 0) { alert('Enter at least one qty.'); return; }
+
+      const submitBtn = backdrop.querySelector('#r-submit');
+      submitBtn.disabled = true; submitBtn.textContent = 'Receiving…';
+
+      const r = await fetch('/api/goods-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          po_id: po.id,
+          warehouse_id: po.deliver_to_warehouse_id,
+          carrier: backdrop.querySelector('#r-carrier').value || null,
+          tracking_number: backdrop.querySelector('#r-tracking').value || null,
+          notes: backdrop.querySelector('#r-notes').value || null,
+          lines
+        })
+      });
+      const d = await r.json();
+      submitBtn.disabled = false; submitBtn.textContent = 'Confirm receipt';
+      if (!d.ok) { alert('Receive failed: ' + d.error); return; }
+      backdrop.remove();
+      location.href = '/orders/goods-in/detail?id=' + d.gi_id;
+    });
   }
 
   function lineTotalPence(qty, cost) {
@@ -332,6 +448,10 @@
       const d = await r.json();
       if (!d.ok) { setStatus('Delete failed: ' + d.error, 'err'); return; }
       location.href = '/orders/purchase-orders';
+      return;
+    }
+    if (act === 'receive') {
+      openReceiveModal(currentPo);
       return;
     }
     const prompts = {

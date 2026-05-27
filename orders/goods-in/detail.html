@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Goods In · Purhaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body data-page="orders">
+
+<div id="tabs-mount"></div>
+
+<div class="page-header">
+  <div>
+    <a href="/orders/goods-in" style="color:var(--ink-dim);font-size:0.85rem;">← Goods In</a>
+    <h1 id="title" style="margin:4px 0 0;">Goods In</h1>
+    <div id="subtitle" style="color:var(--ink-soft);margin-top:4px;font-size:0.9rem;"></div>
+  </div>
+</div>
+
+<div class="card accent-green">
+  <h2 style="margin-top:0">Receipt details</h2>
+  <div id="meta"></div>
+</div>
+
+<div class="card accent-sky">
+  <h2 style="margin-top:0">Lines received</h2>
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>SKU</th>
+          <th>Description</th>
+          <th style="text-align:right">Qty</th>
+          <th>Condition</th>
+          <th>Serial numbers</th>
+        </tr>
+      </thead>
+      <tbody id="lines-body">
+        <tr><td colspan="5" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script type="module">
+  import { mountShell, renderOrdersTabs, fmt, dateOnly } from '/app.js';
+  await mountShell();
+  document.getElementById('tabs-mount').innerHTML = `<div class="orders-tabs">${renderOrdersTabs('goods-in')}</div>`;
+
+  const id = parseInt(new URLSearchParams(window.location.search).get('id'), 10);
+  if (!id) location.href = '/orders/goods-in';
+
+  const r = await fetch('/api/goods-in/' + id);
+  const d = await r.json();
+  if (!d.ok) { document.body.innerHTML += `<p class="err" style="margin:18px;">${d.error}</p>`; throw new Error(d.error); }
+  const gi = d.goods_in;
+
+  document.getElementById('title').textContent = gi.gi_number + ' · ' + gi.warehouse_code;
+  document.getElementById('subtitle').textContent =
+    `Status ${gi.status} · received ${dateOnly(gi.received_at)} by ${gi.received_by_name || gi.received_by_email || 'unknown'}` +
+    (gi.po_number ? ` · against ${gi.po_number}` : '');
+
+  document.getElementById('meta').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">
+      <div><div style="color:var(--ink-dim);font-size:0.78rem;">Warehouse</div><strong>${fmt(gi.warehouse_code)} — ${fmt(gi.warehouse_name)}</strong></div>
+      <div><div style="color:var(--ink-dim);font-size:0.78rem;">Supplier</div><strong>${fmt(gi.supplier_name)}</strong></div>
+      <div><div style="color:var(--ink-dim);font-size:0.78rem;">Purchase order</div><strong>${gi.po_id ? `<a href="/orders/purchase-orders/detail?id=${gi.po_id}">${fmt(gi.po_number)}</a>` : '—'}</strong></div>
+      <div><div style="color:var(--ink-dim);font-size:0.78rem;">Carrier</div><strong>${fmt(gi.carrier)}</strong></div>
+      <div><div style="color:var(--ink-dim);font-size:0.78rem;">Tracking</div><strong>${fmt(gi.tracking_number)}</strong></div>
+    </div>
+    ${gi.notes ? `<div style="margin-top:10px;color:var(--ink-soft);"><strong>Notes:</strong> ${fmt(gi.notes)}</div>` : ''}
+  `;
+
+  document.getElementById('lines-body').innerHTML = gi.lines.length === 0
+    ? '<tr><td colspan="5" class="empty">No lines</td></tr>'
+    : gi.lines.map(l => `
+        <tr>
+          <td class="mono"><strong>${fmt(l.sku)}</strong></td>
+          <td>${fmt(l.description)}${l.qty_expected != null ? `<div style="color:var(--ink-dim);font-size:0.78rem;">expected ${l.qty_expected}</div>` : ''}</td>
+          <td style="text-align:right"><strong>${l.qty_received}</strong></td>
+          <td><span class="pill pill-${l.condition === 'good' ? 'received' : (l.condition === 'damaged' ? 'cancelled' : 'on-hold')}">${l.condition}</span></td>
+          <td>${(l.serials||[]).map(s => `<span class="alloc-chip serial" style="font-family:ui-monospace,Menlo,monospace">${fmt(s.serial_number)}</span>`).join('') || '<span style="color:var(--ink-dim)">—</span>'}</td>
+        </tr>
+      `).join('');
+</script>
+
+</body>
+</html>
