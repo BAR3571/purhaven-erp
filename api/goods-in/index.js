@@ -143,19 +143,21 @@ export default async function handler(req, res) {
       `;
       const gilId = gilRows[0].id;
 
-      // Mint serials if any
+      // Mint serials if any. Damaged/quarantine units are tracked but not stockable
+      // (status='returned' so they can't be allocated to sales orders).
+      const serialStatus = l.condition === 'good' ? 'in_stock' : 'returned';
       for (const sn of l.serials) {
         try {
           await sql`
             INSERT INTO erp_product_serials (
-              product_id, serial_number, status, warehouse_id, received_at, goods_in_line_id
+              product_id, serial_number, status, warehouse_id, received_at, goods_in_line_id, notes
             ) VALUES (
-              ${l.productId}, ${sn}, 'in_stock', ${warehouseId}, NOW(), ${gilId}
+              ${l.productId}, ${sn}, ${serialStatus}, ${warehouseId}, NOW(), ${gilId},
+              ${l.condition === 'good' ? null : `Received ${l.condition} on ${giNumber}`}
             )
           `;
         } catch (err) {
           if (err.message?.includes('erp_product_serials_product_id_serial_number_key')) {
-            // Continue with the receipt but flag
             await sql`UPDATE erp_goods_in SET status = 'discrepancy' WHERE id = ${giId}`;
           } else {
             throw err;
