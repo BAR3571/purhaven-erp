@@ -145,7 +145,7 @@
 </div>
 
 <script type="module">
-  import { mountShell, renderOrdersTabs, fmt, money, dateOnly } from '/app.js';
+  import { mountShell, renderOrdersTabs, fmt, money, dateOnly, openProductPicker } from '/app.js';
   await mountShell();
   document.getElementById('tabs-mount').innerHTML = `<div class="orders-tabs">${renderOrdersTabs('sales-orders')}</div>`;
 
@@ -455,28 +455,14 @@
     load();
   });
 
-  // Add line via SKU lookup
+  // Add line — search-as-you-type product picker
   document.getElementById('add-line-btn').addEventListener('click', async () => {
-    const sku = prompt('SKU to add (search across products)?');
-    if (!sku) return;
-    const pr = await fetch('/api/products?q=' + encodeURIComponent(sku));
-    const pd = await pr.json();
-    if (!pd.ok || pd.products.length === 0) { alert('No product matched ' + sku); return; }
-    let target = pd.products[0];
-    if (pd.products.length > 1) {
-      const list = pd.products.map((p, i) => `${i+1}. ${p.sku} — ${p.name}`).join('\n');
-      const choice = prompt(`Pick a product:\n${list}\n\nEnter number:`);
-      const idx = parseInt(choice, 10) - 1;
-      if (!pd.products[idx]) return;
-      target = pd.products[idx];
-    }
-    const qtyStr = prompt('Quantity?', '1');
-    const qty = parseInt(qtyStr, 10);
-    if (!qty || qty < 1) return;
+    const pick = await openProductPicker({ title: 'Add line to ' + currentSo.so_number, confirmLabel: 'Add line' });
+    if (!pick) return;
     const cr = await fetch('/api/sales-orders/' + id + '/lines', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ product_id: target.id, quantity_ordered: qty })
+      body: JSON.stringify({ product_id: pick.product.id, quantity_ordered: pick.qty })
     });
     const cd = await cr.json();
     if (!cd.ok) { setStatus('Add failed: ' + cd.error, 'err'); return; }

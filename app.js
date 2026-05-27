@@ -176,3 +176,142 @@ export function dateOnly(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-GB');
 }
+
+/**
+ * Search-as-you-type product picker modal.
+ * Resolves with { product, qty } when the user confirms, or null on cancel/Esc.
+ * opts: { title?, confirmLabel?, defaultQty?, askQty? = true }
+ */
+export function openProductPicker(opts = {}) {
+  return new Promise((resolve) => {
+    const title = opts.title || 'Pick a product';
+    const askQty = opts.askQty !== false;
+    const defaultQty = opts.defaultQty ?? 1;
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="modal-card" style="max-width:580px;" onclick="event.stopPropagation()">
+        <button type="button" class="x" data-close>×</button>
+        <h2 style="margin:0 0 4px;">${title.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</h2>
+        <p style="margin:0 0 12px;color:var(--ink-soft);font-size:0.85rem;">Type a SKU, barcode, or product name. ↑↓ to navigate, Enter to pick.</p>
+        <input id="pp-q" type="search" placeholder="🔍 Search products…" autocomplete="off"
+               style="width:100%;padding:9px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);font-size:0.95rem;margin-bottom:6px;">
+        <div id="pp-results" class="alloc-list" style="max-height:280px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);"></div>
+        <div id="pp-selected" style="margin-top:12px;padding:10px;background:var(--surface-2);border-radius:8px;display:none;">
+          <div style="font-size:0.78rem;color:var(--ink-dim);text-transform:uppercase;letter-spacing:0.05em;">Selected</div>
+          <div id="pp-sel-text"></div>
+          ${askQty ? `<div style="margin-top:8px;display:flex;gap:10px;align-items:center;">
+            <label style="font-size:0.85rem;color:var(--ink-soft);">Qty</label>
+            <input id="pp-qty" type="number" min="1" value="${defaultQty}" style="width:90px;text-align:right;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);">
+          </div>` : ''}
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+          <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+          <button type="button" class="btn btn-primary" id="pp-confirm" disabled>${opts.confirmLabel || 'Add'}</button>
+        </div>
+      </div>
+    `;
+
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop || e.target.dataset.close !== undefined) close(null);
+    });
+    document.body.appendChild(backdrop);
+
+    const qInput = backdrop.querySelector('#pp-q');
+    const resultsEl = backdrop.querySelector('#pp-results');
+    const selectedEl = backdrop.querySelector('#pp-selected');
+    const selTextEl = backdrop.querySelector('#pp-sel-text');
+    const qtyEl = backdrop.querySelector('#pp-qty');
+    const confirmBtn = backdrop.querySelector('#pp-confirm');
+
+    let items = [];
+    let cur = -1;
+    let selected = null;
+    let timer;
+
+    function close(value) {
+      backdrop.remove();
+      resolve(value);
+    }
+
+    function render() {
+      if (items.length === 0) {
+        resultsEl.innerHTML = '<div style="padding:14px;color:var(--ink-dim);text-align:center;">Type to search products</div>';
+        return;
+      }
+      resultsEl.innerHTML = items.map((p, i) => {
+        const thumb = p.image_url
+          ? `<img src="${p.image_url}" style="width:36px;height:36px;object-fit:contain;border-radius:6px;background:var(--bg);">`
+          : `<div style="width:36px;height:36px;border-radius:6px;background:var(--bg);border:1px dashed var(--border);"></div>`;
+        const onHand = parseInt(p.qty_on_hand_total || 0, 10);
+        const allocated = parseInt(p.qty_allocated_total || 0, 10);
+        const available = onHand - allocated;
+        const price = p.sale_price_pence != null
+          ? new Intl.NumberFormat('en-GB',{style:'currency',currency:p.currency||'GBP'}).format(p.sale_price_pence/100)
+          : '—';
+        return `
+          <div class="pp-item ${i === cur ? 'active' : ''}" data-i="${i}"
+               style="display:grid;grid-template-columns:auto 1fr auto;gap:10px;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border-soft);">
+            ${thumb}
+            <div>
+              <strong style="font-family:ui-monospace,Menlo,monospace;">${(p.sku||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</strong> · ${(p.name||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+              <div style="color:var(--ink-dim);font-size:0.78rem;">on hand: ${onHand}${allocated ? ` (alloc ${allocated}, avail ${available})` : ''} · ${price}</div>
+            </div>
+            ${p.requires_serial ? '<span class="pill pill-confirmed" style="font-size:0.62rem;align-self:start;">SN</span>' : ''}
+          </div>
+        `;
+      }).join('');
+      resultsEl.querySelectorAll('.pp-item.active').forEach(el => el.scrollIntoView({ block: 'nearest' }));
+    }
+
+    function select(idx) {
+      selected = items[idx] || null;
+      if (!selected) { selectedEl.style.display = 'none'; confirmBtn.disabled = true; return; }
+      selectedEl.style.display = 'block';
+      selTextEl.innerHTML = `<strong style="font-family:ui-monospace,Menlo,monospace;">${(selected.sku||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</strong> — ${(selected.name||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}`;
+      confirmBtn.disabled = false;
+      if (qtyEl) qtyEl.focus();
+    }
+
+    async function runSearch() {
+      const q = qInput.value.trim();
+      if (q.length < 1) { items = []; cur = -1; render(); return; }
+      const r = await fetch('/api/products?q=' + encodeURIComponent(q));
+      const d = await r.json();
+      if (!d.ok) { items = []; render(); return; }
+      items = d.products;
+      cur = items.length > 0 ? 0 : -1;
+      render();
+    }
+
+    qInput.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(runSearch, 150); });
+    qInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); close(null); return; }
+      if (!items.length) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); cur = (cur + 1) % items.length; render(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); cur = (cur - 1 + items.length) % items.length; render(); }
+      else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (cur >= 0) { select(cur); }
+      }
+    });
+
+    resultsEl.addEventListener('click', (e) => {
+      const item = e.target.closest('[data-i]');
+      if (!item) return;
+      cur = parseInt(item.dataset.i, 10);
+      render();
+      select(cur);
+    });
+
+    confirmBtn.addEventListener('click', () => {
+      if (!selected) return;
+      const qty = qtyEl ? parseInt(qtyEl.value, 10) || 1 : 1;
+      close({ product: selected, qty });
+    });
+
+    qInput.focus();
+    render();
+  });
+}
