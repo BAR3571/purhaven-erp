@@ -88,32 +88,44 @@ export default async function handler(req, res) {
   doc.fillColor(colors.SOFT).font('Helvetica').fontSize(8).text(`${company.phone} · ${company.email}`, 48, doc.y, { width: 240 });
   doc.moveDown(0.8);
 
-  // Lines table
+  // Lines table — currency values need ~55pt at 8pt mono-ish width
+  const C = {
+    sku:    { x: 48,  w: 60 },
+    desc:   { x: 108, w: 116 },
+    hs:     { x: 224, w: 50 },
+    origin: { x: 274, w: 28 },
+    qty:    { x: 302, w: 22 },
+    unit:   { x: 324, w: 56 },
+    net:    { x: 380, w: 56 },
+    vat:    { x: 436, w: 52 },
+    total:  { x: 488, w: 60 }
+  };
+
   const tableTop = doc.y + 6;
   doc.fillColor(colors.INK).font('Helvetica-Bold').fontSize(8);
-  doc.text('SKU',          48,  tableTop, { width: 80 });
-  doc.text('Description',  130, tableTop, { width: 130 });
-  doc.text('HS code',      262, tableTop, { width: 55 });
-  doc.text('Origin',       317, tableTop, { width: 40 });
-  doc.text('Qty',          359, tableTop, { width: 28, align: 'right' });
-  doc.text('Unit',         387, tableTop, { width: 50, align: 'right' });
-  doc.text('Net',          437, tableTop, { width: 50, align: 'right' });
-  doc.text('VAT',          487, tableTop, { width: 30, align: 'right' });
-  doc.text('Total',        517, tableTop, { width: 31, align: 'right' });
+  doc.text('SKU',         C.sku.x,    tableTop, { width: C.sku.w });
+  doc.text('Description', C.desc.x,   tableTop, { width: C.desc.w });
+  doc.text('HS code',     C.hs.x,     tableTop, { width: C.hs.w });
+  doc.text('Origin',      C.origin.x, tableTop, { width: C.origin.w });
+  doc.text('Qty',         C.qty.x,    tableTop, { width: C.qty.w,   align: 'right' });
+  doc.text('Unit',        C.unit.x,   tableTop, { width: C.unit.w,  align: 'right' });
+  doc.text('Net',         C.net.x,    tableTop, { width: C.net.w,   align: 'right' });
+  doc.text('VAT',         C.vat.x,    tableTop, { width: C.vat.w,   align: 'right' });
+  doc.text('Total',       C.total.x,  tableTop, { width: C.total.w, align: 'right' });
   doc.moveTo(48, tableTop + 12).lineTo(548, tableTop + 12).strokeColor(colors.LINE).stroke();
 
   doc.font('Helvetica').fontSize(8).fillColor(colors.INK);
   let cy = tableTop + 18;
   for (const r of rows) {
-    doc.font('Helvetica-Bold').text(r.sku || '', 48, cy, { width: 80 });
-    doc.font('Helvetica').text(r.description || '', 130, cy, { width: 130 });
-    doc.text(r.hs_code || '—', 262, cy, { width: 55 });
-    doc.text(r.country_of_origin || '—', 317, cy, { width: 40 });
-    doc.text(String(r.qty), 359, cy, { width: 28, align: 'right' });
-    doc.text(money(r.unit, currency), 387, cy, { width: 50, align: 'right' });
-    doc.text(money(r.lineSub, currency), 437, cy, { width: 50, align: 'right' });
-    doc.text(money(r.lineVat, currency), 487, cy, { width: 30, align: 'right' });
-    doc.font('Helvetica-Bold').text(money(r.lineSub + r.lineVat, currency), 517, cy, { width: 31, align: 'right' });
+    doc.font('Helvetica-Bold').text(r.sku || '', C.sku.x, cy, { width: C.sku.w });
+    doc.font('Helvetica').text(r.description || '', C.desc.x, cy, { width: C.desc.w });
+    doc.text(r.hs_code || '—',                C.hs.x,     cy, { width: C.hs.w });
+    doc.text(r.country_of_origin || '—',      C.origin.x, cy, { width: C.origin.w });
+    doc.text(String(r.qty),                   C.qty.x,    cy, { width: C.qty.w,   align: 'right' });
+    doc.text(money(r.unit, currency),         C.unit.x,   cy, { width: C.unit.w,  align: 'right' });
+    doc.text(money(r.lineSub, currency),      C.net.x,    cy, { width: C.net.w,   align: 'right' });
+    doc.text(money(r.lineVat, currency),      C.vat.x,    cy, { width: C.vat.w,   align: 'right' });
+    doc.font('Helvetica-Bold').text(money(r.lineSub + r.lineVat, currency), C.total.x, cy, { width: C.total.w, align: 'right' });
     doc.font('Helvetica');
     let newY = Math.max(doc.y, cy + 14);
     doc.moveTo(48, newY + 2).lineTo(548, newY + 2).strokeColor(colors.LINE).lineWidth(0.4).stroke();
