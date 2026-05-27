@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sales Order · Purhaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  .so-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 1000px) { .so-grid { grid-template-columns: 1fr; } }
+  .totals-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 6px 0; }
+  .totals-row.grand { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 12px; font-weight: 700; font-size: 1.1rem; }
+  .err { color: #991b1b; }
+  .ok { color: #065f46; }
+  .line-row td input, .line-row td select { background: transparent; border: 1px solid transparent; padding: 4px 6px; }
+  .line-row td input:hover, .line-row td input:focus, .line-row td select:focus { border-color: var(--border); background: var(--bg); }
+  .line-row td input.num { text-align: right; }
+</style>
+</head>
+<body data-page="orders">
+
+<div id="tabs-mount"></div>
+
+<div id="page-header" class="page-header">
+  <div>
+    <a href="/orders/sales-orders" style="color:var(--ink-dim);font-size:0.85rem;">← Sales Orders</a>
+    <h1 id="title" style="margin:4px 0 0;">Sales Order</h1>
+    <div id="subtitle" style="color:var(--ink-soft);margin-top:4px;font-size:0.9rem;"></div>
+  </div>
+  <div class="actions" id="actions"></div>
+</div>
+
+<div id="status-msg" style="margin-bottom:12px;"></div>
+
+<div class="so-grid">
+  <div class="card accent-sky">
+    <h2 style="margin-top:0">Order details</h2>
+    <form id="so-form">
+      <div class="field-row">
+        <div class="field">
+          <label for="f-customer-ref">Customer reference (their PO)</label>
+          <input type="text" id="f-customer-ref">
+        </div>
+        <div class="field">
+          <label for="f-required-date">Required by</label>
+          <input type="date" id="f-required-date">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="f-order-date">Order date</label>
+          <input type="date" id="f-order-date">
+        </div>
+        <div class="field">
+          <label for="f-currency">Currency</label>
+          <select id="f-currency">
+            <option value="GBP">GBP</option>
+            <option value="EUR">EUR</option>
+            <option value="USD">USD</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="f-notes">Notes</label>
+        <textarea id="f-notes" rows="2"></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary" id="save-btn">Save header</button>
+    </form>
+  </div>
+
+  <div class="card accent-orange">
+    <h2 style="margin-top:0">Ship to</h2>
+    <div class="field">
+      <label for="f-ship-name">Name</label>
+      <input type="text" id="f-ship-name">
+    </div>
+    <div class="field">
+      <label for="f-ship-line1">Address line 1</label>
+      <input type="text" id="f-ship-line1">
+    </div>
+    <div class="field">
+      <label for="f-ship-line2">Address line 2</label>
+      <input type="text" id="f-ship-line2">
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label for="f-ship-city">City</label>
+        <input type="text" id="f-ship-city">
+      </div>
+      <div class="field">
+        <label for="f-ship-county">County</label>
+        <input type="text" id="f-ship-county">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label for="f-ship-postcode">Postcode</label>
+        <input type="text" id="f-ship-postcode">
+      </div>
+      <div class="field">
+        <label for="f-ship-country">Country (ISO)</label>
+        <input type="text" id="f-ship-country" placeholder="GB">
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card accent-purple" id="lines-card">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+    <h2 style="margin:0;">Lines</h2>
+    <button type="button" class="btn btn-sky" id="add-line-btn">+ Add line</button>
+  </div>
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th style="width:32px">#</th>
+          <th>SKU</th>
+          <th>Description</th>
+          <th style="text-align:right;width:80px">Qty</th>
+          <th style="text-align:right;width:120px">Unit price (£)</th>
+          <th style="text-align:right;width:80px">Disc %</th>
+          <th style="text-align:right;width:80px">VAT %</th>
+          <th style="text-align:right;width:120px">Line total</th>
+          <th style="width:40px"></th>
+        </tr>
+      </thead>
+      <tbody id="lines-body">
+        <tr><td colspan="9" class="empty">No lines yet.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 280px;gap:10px;margin-top:14px;">
+    <div></div>
+    <div>
+      <div class="totals-row"><span>Subtotal (ex VAT)</span><strong id="t-subtotal">£0.00</strong></div>
+      <div class="totals-row"><span>VAT</span><strong id="t-vat">£0.00</strong></div>
+      <div class="totals-row grand"><span>Total</span><strong id="t-total">£0.00</strong></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { mountShell, renderOrdersTabs, fmt, money, dateOnly } from '/app.js';
+  await mountShell();
+  document.getElementById('tabs-mount').innerHTML = `<div class="orders-tabs">${renderOrdersTabs('sales-orders')}</div>`;
+
+  const params = new URLSearchParams(window.location.search);
+  const id = parseInt(params.get('id'), 10);
+  if (!id) { alert('No order id'); location.href = '/orders/sales-orders'; }
+
+  const titleEl = document.getElementById('title');
+  const subtitleEl = document.getElementById('subtitle');
+  const statusEl = document.getElementById('status-msg');
+  const actionsEl = document.getElementById('actions');
+  const linesBody = document.getElementById('lines-body');
+
+  function setStatus(msg, cls) {
+    statusEl.innerHTML = msg
+      ? `<div class="card accent-${cls === 'err' ? 'pink' : 'green'}" style="padding:10px 14px;"><span class="${cls}">${msg}</span></div>`
+      : '';
+    if (msg) setTimeout(() => { statusEl.innerHTML = ''; }, 4000);
+  }
+
+  function fillHeader(so) {
+    titleEl.textContent = `${so.so_number} · ${so.customer_name}`;
+    subtitleEl.textContent = `${so.status.replace(/_/g, ' ')} · order ${dateOnly(so.order_date)}` +
+                             (so.required_date ? ` · required ${dateOnly(so.required_date)}` : '');
+    document.getElementById('f-customer-ref').value  = so.customer_ref || '';
+    document.getElementById('f-required-date').value = so.required_date ? so.required_date.slice(0,10) : '';
+    document.getElementById('f-order-date').value    = so.order_date ? so.order_date.slice(0,10) : '';
+    document.getElementById('f-currency').value      = so.currency || 'GBP';
+    document.getElementById('f-notes').value         = so.notes || '';
+    document.getElementById('f-ship-name').value     = so.ship_to_name || '';
+    document.getElementById('f-ship-line1').value    = so.ship_to_line1 || '';
+    document.getElementById('f-ship-line2').value    = so.ship_to_line2 || '';
+    document.getElementById('f-ship-city').value     = so.ship_to_city || '';
+    document.getElementById('f-ship-county').value   = so.ship_to_county || '';
+    document.getElementById('f-ship-postcode').value = so.ship_to_postcode || '';
+    document.getElementById('f-ship-country').value  = so.ship_to_country || 'GB';
+  }
+
+  function fillTotals(so) {
+    document.getElementById('t-subtotal').textContent = money(so.subtotal_pence, so.currency);
+    document.getElementById('t-vat').textContent      = money(so.vat_pence, so.currency);
+    document.getElementById('t-total').textContent    = money(so.total_pence, so.currency);
+  }
+
+  function fillActions(so) {
+    const buttons = [];
+    if (so.status === 'draft' || so.status === 'on_hold') buttons.push(`<button type="button" class="btn btn-primary" data-act="confirm">Confirm order</button>`);
+    if (so.status === 'draft' || so.status === 'confirmed') buttons.push(`<button type="button" class="btn btn-ghost" data-act="hold">Put on hold</button>`);
+    if (so.status === 'on_hold') buttons.push(`<button type="button" class="btn btn-ghost" data-act="unhold">Take off hold</button>`);
+    if (['draft', 'confirmed', 'on_hold'].includes(so.status)) buttons.push(`<button type="button" class="btn btn-danger" data-act="cancel">Cancel</button>`);
+    if (so.status === 'draft' && so.lines.length === 0) buttons.push(`<button type="button" class="btn btn-danger" data-act="delete">Delete</button>`);
+    actionsEl.innerHTML = buttons.join(' ');
+  }
+
+  function lineTotal(qty, price, disc) {
+    return Math.round(qty * price * (1 - disc / 100));
+  }
+
+  function renderLines(so) {
+    if (so.lines.length === 0) {
+      linesBody.innerHTML = '<tr><td colspan="9" class="empty">No lines yet — click <strong>+ Add line</strong> to start.</td></tr>';
+      return;
+    }
+    const editable = !['despatched','invoiced','complete','cancelled'].includes(so.status);
+    linesBody.innerHTML = so.lines.map(l => {
+      const lineSubtotal = lineTotal(l.quantity_ordered, l.unit_price_pence, Number(l.discount_percent));
+      return `
+        <tr class="line-row" data-lid="${l.id}">
+          <td class="mono">${l.line_no}</td>
+          <td class="mono"><strong>${fmt(l.sku)}</strong></td>
+          <td><input type="text" data-f="description" value="${(l.description||'').replace(/"/g,'&quot;')}" ${editable ? '' : 'readonly'}></td>
+          <td><input class="num" type="number" data-f="quantity_ordered" min="1" value="${l.quantity_ordered}" ${editable ? '' : 'readonly'}></td>
+          <td><input class="num" type="number" data-f="unit_price_pounds" step="0.01" min="0" value="${(l.unit_price_pence/100).toFixed(2)}" ${editable ? '' : 'readonly'}></td>
+          <td><input class="num" type="number" data-f="discount_percent" min="0" max="100" step="0.5" value="${Number(l.discount_percent)}" ${editable ? '' : 'readonly'}></td>
+          <td><input class="num" type="number" data-f="vat_rate_percent" min="0" max="100" value="${l.vat_rate_percent}" ${editable ? '' : 'readonly'}></td>
+          <td style="text-align:right"><strong>${money(lineSubtotal, so.currency)}</strong></td>
+          <td>${editable ? `<button class="btn btn-danger" data-act="del-line" data-lid="${l.id}">×</button>` : ''}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  let currentSo = null;
+  async function load() {
+    const r = await fetch('/api/sales-orders/' + id);
+    const d = await r.json();
+    if (!d.ok) { setStatus('Load failed: ' + d.error, 'err'); return; }
+    currentSo = d.sales_order;
+    fillHeader(currentSo);
+    fillTotals(currentSo);
+    fillActions(currentSo);
+    renderLines(currentSo);
+  }
+
+  // Save header
+  document.getElementById('so-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {
+      customer_ref:    document.getElementById('f-customer-ref').value || null,
+      required_date:   document.getElementById('f-required-date').value || null,
+      order_date:      document.getElementById('f-order-date').value || null,
+      currency:        document.getElementById('f-currency').value,
+      notes:           document.getElementById('f-notes').value || null,
+      ship_to_name:    document.getElementById('f-ship-name').value || null,
+      ship_to_line1:   document.getElementById('f-ship-line1').value || null,
+      ship_to_line2:   document.getElementById('f-ship-line2').value || null,
+      ship_to_city:    document.getElementById('f-ship-city').value || null,
+      ship_to_county:  document.getElementById('f-ship-county').value || null,
+      ship_to_postcode:document.getElementById('f-ship-postcode').value || null,
+      ship_to_country: document.getElementById('f-ship-country').value || 'GB'
+    };
+    const r = await fetch('/api/sales-orders/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!d.ok) { setStatus('Save failed: ' + d.error, 'err'); return; }
+    setStatus('Header saved.', 'ok');
+    load();
+  });
+
+  // Add line via SKU lookup
+  document.getElementById('add-line-btn').addEventListener('click', async () => {
+    const sku = prompt('SKU to add (search across products)?');
+    if (!sku) return;
+    const pr = await fetch('/api/products?q=' + encodeURIComponent(sku));
+    const pd = await pr.json();
+    if (!pd.ok || pd.products.length === 0) { alert('No product matched ' + sku); return; }
+    let target = pd.products[0];
+    if (pd.products.length > 1) {
+      const list = pd.products.map((p, i) => `${i+1}. ${p.sku} — ${p.name}`).join('\n');
+      const choice = prompt(`Pick a product:\n${list}\n\nEnter number:`);
+      const idx = parseInt(choice, 10) - 1;
+      if (!pd.products[idx]) return;
+      target = pd.products[idx];
+    }
+    const qtyStr = prompt('Quantity?', '1');
+    const qty = parseInt(qtyStr, 10);
+    if (!qty || qty < 1) return;
+    const cr = await fetch('/api/sales-orders/' + id + '/lines', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product_id: target.id, quantity_ordered: qty })
+    });
+    const cd = await cr.json();
+    if (!cd.ok) { setStatus('Add failed: ' + cd.error, 'err'); return; }
+    load();
+  });
+
+  // Inline line edits (debounced)
+  let editTimer = null;
+  linesBody.addEventListener('input', (e) => {
+    const inp = e.target;
+    if (!inp.dataset.f) return;
+    const tr = inp.closest('tr');
+    const lid = tr.dataset.lid;
+    clearTimeout(editTimer);
+    editTimer = setTimeout(async () => {
+      const body = {};
+      const get = (f) => tr.querySelector(`[data-f="${f}"]`).value;
+      body.description       = get('description');
+      body.quantity_ordered  = parseInt(get('quantity_ordered'), 10);
+      body.unit_price_pence  = Math.round(parseFloat(get('unit_price_pounds')) * 100);
+      body.discount_percent  = parseFloat(get('discount_percent'));
+      body.vat_rate_percent  = parseInt(get('vat_rate_percent'), 10);
+      const r = await fetch('/api/sales-orders/' + id + '/lines/' + lid, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Line save failed: ' + d.error, 'err'); return; }
+      // Refresh totals + line totals
+      load();
+    }, 400);
+  });
+
+  // Delete line
+  linesBody.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act="del-line"]');
+    if (!btn) return;
+    if (!confirm('Delete this line?')) return;
+    const lid = btn.dataset.lid;
+    const r = await fetch('/api/sales-orders/' + id + '/lines/' + lid, { method: 'DELETE' });
+    const d = await r.json();
+    if (!d.ok) { setStatus('Delete failed: ' + d.error, 'err'); return; }
+    load();
+  });
+
+  // Status actions + delete-SO
+  actionsEl.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    const act = btn.dataset.act;
+    if (act === 'delete') {
+      if (!confirm('Delete this draft sales order?')) return;
+      const r = await fetch('/api/sales-orders/' + id, { method: 'DELETE' });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Delete failed: ' + d.error, 'err'); return; }
+      location.href = '/orders/sales-orders';
+      return;
+    }
+    const prompts = {
+      confirm: 'Confirm this order? Lines will be locked from price/qty edits once despatched.',
+      hold:    'Put this order on hold?',
+      unhold:  'Take this order off hold?',
+      cancel:  'Cancel this order? This cannot be undone (status will be Cancelled).'
+    };
+    if (!confirm(prompts[act])) return;
+    const r = await fetch('/api/sales-orders/' + id + '/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: act })
+    });
+    const d = await r.json();
+    if (!d.ok) { setStatus('Action failed: ' + d.error, 'err'); return; }
+    load();
+  });
+
+  load();
+</script>
+
+</body>
+</html>

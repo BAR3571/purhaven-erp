@@ -2,12 +2,20 @@
 // Each page sets <body data-page="...">.
 
 const NAV = [
-  { key: 'warehouse', href: '/',           label: '🏭 Warehouse' },
-  { key: 'customers', href: '/customers',  label: '👥 Customers' },
-  { key: 'suppliers', href: '/suppliers',  label: '🏷️ Suppliers' },
-  { key: 'orders',    href: '/orders',     label: '📦 Orders' },
-  { key: 'products',  href: '/products',   label: '🧰 Products & Stock' },
-  { key: 'reports',   href: '/reports',    label: '📋 Reports' }
+  { key: 'warehouse', href: '/',                       label: '🏭 Warehouse' },
+  { key: 'customers', href: '/customers',              label: '👥 Customers' },
+  { key: 'suppliers', href: '/suppliers',              label: '🏷️ Suppliers' },
+  { key: 'orders',    href: '/orders/sales-orders',    label: '📦 Orders' },
+  { key: 'products',  href: '/products',               label: '🧰 Products & Stock' },
+  { key: 'reports',   href: '/reports',                label: '📋 Reports' }
+];
+
+const ORDERS_TABS = [
+  { key: 'sales-orders',    href: '/orders/sales-orders',    label: '📦 Sales Orders' },
+  { key: 'purchase-orders', href: '/orders/purchase-orders', label: '📋 Purchase Orders' },
+  { key: 'goods-in',        href: '/orders/goods-in',        label: '🛒 Goods In' },
+  { key: 'despatch',        href: '/orders/despatch',        label: '🚚 Despatch' },
+  { key: 'scan',            href: '/orders/scan',            label: '🧷 Scan' }
 ];
 
 const TYPE_LABEL = {
@@ -15,9 +23,15 @@ const TYPE_LABEL = {
   supplier: '🏷️ Supplier',
   product:  '🧰 Product',
   sales_order:    '📦 Sales order',
-  purchase_order: '📦 Purchase order',
+  purchase_order: '📋 Purchase order',
   despatch: '🚚 Despatch'
 };
+
+export function renderOrdersTabs(activeTab) {
+  return ORDERS_TABS.map(t =>
+    `<a class="orders-tab ${t.key === activeTab ? 'active' : ''}" href="${t.href}">${t.label}</a>`
+  ).join('');
+}
 
 function renderTopbar(active) {
   const navLinks = NAV.map(item =>

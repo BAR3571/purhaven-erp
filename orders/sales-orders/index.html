@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sales Orders · Purhaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body data-page="orders">
+
+<div id="tabs-mount"></div>
+
+<div class="page-header">
+  <h1>📦 Sales Orders</h1>
+  <div class="actions">
+    <button type="button" class="btn btn-primary" id="new-so-btn">+ New Sales Order</button>
+  </div>
+</div>
+
+<div class="search-row">
+  <input type="search" id="q" placeholder="Search SO#, customer, ref…">
+  <select id="status">
+    <option value="">All statuses</option>
+    <option value="draft">Draft</option>
+    <option value="confirmed">Confirmed</option>
+    <option value="picking">Picking</option>
+    <option value="part_despatched">Part despatched</option>
+    <option value="despatched">Despatched</option>
+    <option value="invoiced">Invoiced</option>
+    <option value="complete">Complete</option>
+    <option value="on_hold">On hold</option>
+    <option value="cancelled">Cancelled</option>
+  </select>
+</div>
+
+<div class="card" style="padding: 0;">
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>SO #</th>
+          <th>Customer</th>
+          <th>Customer ref</th>
+          <th>Order date</th>
+          <th>Required</th>
+          <th>Status</th>
+          <th style="text-align:right">Lines</th>
+          <th style="text-align:right">Total</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="rows">
+        <tr><td colspan="9" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script type="module">
+  import { mountShell, renderOrdersTabs, fmt, money, dateOnly } from '/app.js';
+  await mountShell();
+  document.getElementById('tabs-mount').innerHTML = `<div class="orders-tabs">${renderOrdersTabs('sales-orders')}</div>`;
+
+  const rowsEl = document.getElementById('rows');
+  const q = document.getElementById('q');
+  const statusSel = document.getElementById('status');
+  let timer;
+
+  async function load() {
+    const params = new URLSearchParams();
+    if (q.value.trim()) params.set('q', q.value.trim());
+    if (statusSel.value) params.set('status', statusSel.value);
+    rowsEl.innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
+    const r = await fetch('/api/sales-orders?' + params.toString());
+    const d = await r.json();
+    if (!d.ok) { rowsEl.innerHTML = `<tr><td colspan="9" class="empty">Error: ${d.error}</td></tr>`; return; }
+    if (d.sales_orders.length === 0) {
+      rowsEl.innerHTML = '<tr><td colspan="9" class="empty"><h3>No sales orders yet</h3><p>Click <strong>+ New Sales Order</strong> to create one.</p></td></tr>';
+      return;
+    }
+    rowsEl.innerHTML = d.sales_orders.map(so => `
+      <tr>
+        <td class="mono"><a href="/orders/sales-orders/detail?id=${so.id}">${fmt(so.so_number)}</a></td>
+        <td><a href="/customers/detail?id=${so.customer_id}">${fmt(so.customer_name)}</a><div style="color:var(--ink-dim);font-size:0.78rem;">${fmt(so.customer_code)}</div></td>
+        <td>${fmt(so.customer_ref)}</td>
+        <td>${dateOnly(so.order_date)}</td>
+        <td>${so.required_date ? dateOnly(so.required_date) : '—'}</td>
+        <td><span class="pill pill-${so.status.replace(/_/g,'-')}">${so.status.replace(/_/g,' ')}</span>${so.source === 'website' ? ' <span class="pill pill-confirmed" style="font-size:0.62rem;">web</span>' : ''}</td>
+        <td style="text-align:right">${so.line_count}</td>
+        <td style="text-align:right"><strong>${money(so.total_pence, so.currency)}</strong></td>
+        <td><a href="/orders/sales-orders/detail?id=${so.id}" class="btn btn-ghost">Open →</a></td>
+      </tr>
+    `).join('');
+  }
+
+  // "+ New" opens a small inline customer picker
+  document.getElementById('new-so-btn').addEventListener('click', async () => {
+    const customerCode = prompt('Customer account code or name to start an SO for?');
+    if (!customerCode) return;
+    const r = await fetch('/api/customers?q=' + encodeURIComponent(customerCode));
+    const d = await r.json();
+    if (!d.ok || d.customers.length === 0) { alert('No customer matched.'); return; }
+    let target = d.customers[0];
+    if (d.customers.length > 1) {
+      const list = d.customers.map((c, i) => `${i + 1}. ${c.name} (${c.account_code})`).join('\n');
+      const choice = prompt(`Pick a customer:\n${list}\n\nEnter number:`);
+      const idx = parseInt(choice, 10) - 1;
+      if (!d.customers[idx]) return;
+      target = d.customers[idx];
+    }
+    const create = await fetch('/api/sales-orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customer_id: target.id })
+    });
+    const cd = await create.json();
+    if (!cd.ok) { alert('Failed: ' + cd.error); return; }
+    window.location.href = '/orders/sales-orders/detail?id=' + cd.sales_order.id;
+  });
+
+  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 200); });
+  statusSel.addEventListener('change', load);
+  load();
+</script>
+
+</body>
+</html>

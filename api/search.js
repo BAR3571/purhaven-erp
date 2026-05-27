@@ -65,6 +65,25 @@ export default async function handler(req, res) {
       FROM erp_products
       WHERE active = TRUE
         AND (name ILIKE ${like} OR sku ILIKE ${like} OR barcode ILIKE ${like} OR ean ILIKE ${like})
+
+      UNION ALL
+
+      SELECT
+        'sales_order' AS type,
+        so.id::text   AS id,
+        c.name        AS label,
+        so.so_number  AS sub,
+        '/orders/sales-orders/detail?id=' || so.id AS href,
+        CASE
+          WHEN so.so_number ILIKE ${like} THEN 1
+          WHEN so.customer_ref ILIKE ${like} THEN 2
+          ELSE 3
+        END AS rank
+      FROM erp_sales_orders so
+      JOIN erp_customers c ON c.id = so.customer_id
+      WHERE so.so_number ILIKE ${like}
+         OR so.customer_ref ILIKE ${like}
+         OR c.name ILIKE ${like}
     ) hits
     ORDER BY rank ASC, label ASC
     LIMIT ${limit}

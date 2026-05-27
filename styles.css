@@ -223,6 +223,34 @@ h3 { font-size: 1.05rem; }
 .page-header h1 { margin: 0; }
 .page-header .actions { display: flex; gap: 8px; }
 
+/* ============ ORDERS TAB BAR ============ */
+.orders-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.orders-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--ink-soft);
+  font-weight: 600;
+  font-size: 0.88rem;
+  text-decoration: none;
+}
+.orders-tab:hover { color: var(--ink); border-color: var(--sky); }
+.orders-tab.active {
+  color: var(--sky-deep);
+  border-color: var(--sky-deep);
+  background: rgba(74,155,184,0.08);
+  box-shadow: inset 0 -2px 0 var(--sky-deep);
+}
+
 /* ============ TABS ============ */
 .tabs {
   display: flex;

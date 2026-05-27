@@ -251,7 +251,73 @@ const MIGRATIONS = [
   `CREATE INDEX IF NOT EXISTS erp_serials_status_idx ON erp_product_serials(status)`,
   `CREATE INDEX IF NOT EXISTS erp_serials_due_idx ON erp_product_serials(service_due_at)`,
   `CREATE INDEX IF NOT EXISTS erp_serials_customer_idx ON erp_product_serials(despatched_to_customer_id)`,
-  `CREATE INDEX IF NOT EXISTS erp_serials_parent_idx ON erp_product_serials(parent_serial_id)`
+  `CREATE INDEX IF NOT EXISTS erp_serials_parent_idx ON erp_product_serials(parent_serial_id)`,
+
+  // ---------- Sales Orders (Phase 1 · Task #48) ----------
+  `CREATE TABLE IF NOT EXISTS erp_sales_orders (
+    id SERIAL PRIMARY KEY,
+    so_number TEXT UNIQUE NOT NULL,
+    customer_id INTEGER NOT NULL REFERENCES erp_customers(id),
+    status TEXT NOT NULL DEFAULT 'draft'
+      CHECK (status IN ('draft','confirmed','picking','part_despatched','despatched','invoiced','complete','on_hold','cancelled')),
+    customer_ref TEXT,
+    order_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    required_date DATE,
+    ship_to_address_id INTEGER REFERENCES erp_customer_addresses(id),
+    ship_to_name TEXT,
+    ship_to_line1 TEXT,
+    ship_to_line2 TEXT,
+    ship_to_city TEXT,
+    ship_to_county TEXT,
+    ship_to_postcode TEXT,
+    ship_to_country TEXT DEFAULT 'GB',
+    bill_to_address_id INTEGER REFERENCES erp_customer_addresses(id),
+    bill_to_name TEXT,
+    bill_to_line1 TEXT,
+    bill_to_line2 TEXT,
+    bill_to_city TEXT,
+    bill_to_county TEXT,
+    bill_to_postcode TEXT,
+    bill_to_country TEXT DEFAULT 'GB',
+    currency TEXT NOT NULL DEFAULT 'GBP',
+    subtotal_pence INTEGER NOT NULL DEFAULT 0,
+    vat_pence INTEGER NOT NULL DEFAULT 0,
+    total_pence INTEGER NOT NULL DEFAULT 0,
+    notes TEXT,
+    xero_invoice_id TEXT,
+    source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual','website')),
+    revolut_order_id TEXT,
+    confirmed_at TIMESTAMPTZ,
+    despatched_at TIMESTAMPTZ,
+    cancelled_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by INTEGER REFERENCES erp_users(id)
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_so_customer_idx ON erp_sales_orders(customer_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_so_status_idx ON erp_sales_orders(status)`,
+  `CREATE INDEX IF NOT EXISTS erp_so_order_date_idx ON erp_sales_orders(order_date DESC)`,
+  `CREATE INDEX IF NOT EXISTS erp_so_revolut_idx ON erp_sales_orders(revolut_order_id)`,
+
+  `CREATE TABLE IF NOT EXISTS erp_sales_order_lines (
+    id SERIAL PRIMARY KEY,
+    so_id INTEGER NOT NULL REFERENCES erp_sales_orders(id) ON DELETE CASCADE,
+    line_no INTEGER NOT NULL,
+    product_id INTEGER REFERENCES erp_products(id),
+    sku TEXT,
+    description TEXT NOT NULL,
+    quantity_ordered INTEGER NOT NULL DEFAULT 1,
+    quantity_despatched INTEGER NOT NULL DEFAULT 0,
+    unit_price_pence INTEGER NOT NULL DEFAULT 0,
+    discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+    cost_price_pence INTEGER,
+    vat_rate_percent INTEGER NOT NULL DEFAULT 20,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_sol_so_idx ON erp_sales_order_lines(so_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_sol_product_idx ON erp_sales_order_lines(product_id)`
 ];
 
 export default async function handler(req, res) {
