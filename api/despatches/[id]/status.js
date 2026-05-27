@@ -98,7 +98,20 @@ export default async function handler(req, res) {
       }
     }
 
-    await sql`UPDATE erp_despatches SET status = 'packed', picked_at = NOW(), packed_at = NOW() WHERE id = ${id}`;
+    // Optionally capture packaging info at the picking-confirmation step
+    const b = req.body || {};
+    const weight = b.weight_kg === '' || b.weight_kg == null ? null : Number(b.weight_kg);
+    await sql`
+      UPDATE erp_despatches SET
+        status = 'packed',
+        picked_at = NOW(),
+        packed_at = NOW(),
+        weight_kg = COALESCE(${weight}, weight_kg),
+        package_dims_cm = COALESCE(${b.package_dims_cm || null}, package_dims_cm),
+        number_of_packages = COALESCE(${b.number_of_packages ? parseInt(b.number_of_packages, 10) : null}, number_of_packages),
+        packaging_notes = COALESCE(${b.packaging_notes || null}, packaging_notes)
+      WHERE id = ${id}
+    `;
   }
 
   else if (action === 'unpack') {
@@ -109,6 +122,12 @@ export default async function handler(req, res) {
     // Final shipment. Decrement stock, flip serials to 'despatched' + set service_due,
     // set qty_despatched on lines, refresh SO status.
     const b = req.body || {};
+
+    // Carrier + tracking are required at this final step
+    const carrier = (b.carrier ?? dn.carrier ?? '').trim();
+    const tracking = (b.tracking_number ?? dn.tracking_number ?? '').trim();
+    if (!carrier) return res.status(400).json({ error: 'Carrier is required to confirm despatch' });
+    if (!tracking) return res.status(400).json({ error: 'Tracking number is required to confirm despatch' });
 
     // Pull lines + serials
     const dnLines = await sql`
@@ -173,8 +192,8 @@ export default async function handler(req, res) {
       UPDATE erp_despatches SET
         status = 'despatched',
         despatched_at = ${despatchedAt},
-        carrier = ${b.carrier || dn.carrier},
-        tracking_number = ${b.tracking_number || dn.tracking_number},
+        carrier = ${carrier},
+        tracking_number = ${tracking},
         weight_kg = ${b.weight_kg ?? dn.weight_kg},
         number_of_packages = ${b.number_of_packages ?? dn.number_of_packages}
       WHERE id = ${id}

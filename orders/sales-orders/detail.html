@@ -193,7 +193,7 @@
   function fillActions(so) {
     const buttons = [];
     if (so.status === 'draft' || so.status === 'on_hold') buttons.push(`<button type="button" class="btn btn-primary" data-act="confirm">Confirm order</button>`);
-    if (['confirmed', 'picking', 'part_despatched'].includes(so.status)) buttons.push(`<button type="button" class="btn btn-primary" data-act="create-despatch">🚚 Create despatch</button>`);
+    if (['confirmed', 'picking', 'part_despatched'].includes(so.status)) buttons.push(`<button type="button" class="btn btn-primary" data-act="create-despatch">📋 Create pick list</button>`);
     if (so.status === 'draft' || so.status === 'confirmed') buttons.push(`<button type="button" class="btn btn-ghost" data-act="hold">Put on hold</button>`);
     if (so.status === 'on_hold') buttons.push(`<button type="button" class="btn btn-ghost" data-act="unhold">Take off hold</button>`);
     if (['draft', 'confirmed', 'on_hold'].includes(so.status)) buttons.push(`<button type="button" class="btn btn-danger" data-act="cancel">Cancel</button>`);
@@ -210,12 +210,12 @@
     backdrop.innerHTML = `
       <div class="modal-card" onclick="event.stopPropagation()">
         <button type="button" class="x" data-close>×</button>
-        <h2 style="margin:0 0 4px;">Create despatch for ${currentSo.so_number}</h2>
-        <p style="margin:0 0 14px;color:var(--ink-soft);font-size:0.85rem;">Pick which lines and how many to ship. Picking + packing happens on the despatch screen.</p>
+        <h2 style="margin:0 0 4px;">Create pick list for ${currentSo.so_number}</h2>
+        <p style="margin:0 0 14px;color:var(--ink-soft);font-size:0.85rem;">Pick which lines and qty for the warehouse to pull. Weights, box size and shipping details get captured during picking — carrier &amp; tracking are needed only at the final despatch step.</p>
         <div id="cd-lines"></div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
           <button type="button" class="btn btn-ghost" data-close>Cancel</button>
-          <button type="button" class="btn btn-primary" id="cd-submit">Create despatch</button>
+          <button type="button" class="btn btn-primary" id="cd-submit">Create pick list</button>
         </div>
       </div>
     `;

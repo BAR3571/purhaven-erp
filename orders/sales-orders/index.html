@@ -114,7 +114,7 @@
       }
 
       if (isOpen && allocSerials >= outstanding && outstanding > 0) {
-        action = `<button type="button" class="btn btn-primary" data-act="quick-despatch" data-soid="${so.id}" title="Create despatch using ${allocSerials} allocated serial${allocSerials===1?'':'s'}">🚚 Despatch</button>`;
+        action = `<button type="button" class="btn btn-primary" data-act="quick-despatch" data-soid="${so.id}" title="Create pick list using ${allocSerials} allocated serial${allocSerials===1?'':'s'}">📋 Pick list</button>`;
       }
 
       return `
@@ -139,7 +139,7 @@
     const btn = e.target.closest('button[data-act="quick-despatch"]');
     if (!btn) return;
     const soid = parseInt(btn.dataset.soid, 10);
-    if (!confirm('Create a despatch for the outstanding qty on all lines of this SO?')) return;
+    if (!confirm('Create a pick list for the outstanding qty on all lines of this SO?')) return;
     btn.disabled = true;
     btn.textContent = 'Creating…';
     try {

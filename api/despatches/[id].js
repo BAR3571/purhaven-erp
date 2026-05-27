@@ -34,6 +34,8 @@ export default async function handler(req, res) {
         tracking_number = ${b.tracking_number === undefined ? e.tracking_number : (b.tracking_number || null)},
         weight_kg = ${weightKg},
         number_of_packages = ${b.number_of_packages === undefined ? e.number_of_packages : (parseInt(b.number_of_packages, 10) || 1)},
+        package_dims_cm = ${b.package_dims_cm === undefined ? e.package_dims_cm : (b.package_dims_cm || null)},
+        packaging_notes = ${b.packaging_notes === undefined ? e.packaging_notes : (b.packaging_notes || null)},
         notes = ${b.notes === undefined ? e.notes : (b.notes || null)},
         assigned_picker_id = ${b.assigned_picker_id === undefined ? e.assigned_picker_id : (b.assigned_picker_id ? parseInt(b.assigned_picker_id, 10) : null)}
       WHERE id = ${id}

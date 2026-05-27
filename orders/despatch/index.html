@@ -15,9 +15,10 @@
 <div id="tabs-mount"></div>
 
 <div class="page-header">
-  <h1>🚚 Despatches</h1>
+  <h1>📋 Pick lists &amp; despatches</h1>
   <div class="actions" id="filter-chips"></div>
 </div>
+<p style="color:var(--ink-soft);font-size:0.85rem;margin:-4px 0 14px;">Pick lists are created from a Sales Order, then progress through picking, packaging, and finally despatch (which requires carrier &amp; tracking).</p>
 
 <div class="search-row">
   <input type="search" id="q" placeholder="Search DN#, SO#, customer, tracking…">
@@ -52,10 +53,10 @@
   document.getElementById('tabs-mount').innerHTML = `<div class="orders-tabs">${renderOrdersTabs('despatch')}</div>`;
 
   const FILTERS = [
-    { key: '',         label: 'All', count: null },
-    { key: 'pending',  label: '⏳ Picking queue' },
+    { key: '',         label: 'All' },
+    { key: 'pending',  label: '📋 New pick lists' },
     { key: 'picking',  label: '📦 In picking' },
-    { key: 'packed',   label: '✅ To confirm' },
+    { key: 'packed',   label: '✅ Picked · awaiting despatch' },
     { key: 'despatched', label: '🚚 Despatched' }
   ];
   let activeStatus = 'pending';
@@ -88,7 +89,7 @@
     const d = await r.json();
     if (!d.ok) { rowsEl.innerHTML = `<tr><td colspan="9" class="empty">Error: ${d.error}</td></tr>`; return; }
     if (d.despatches.length === 0) {
-      rowsEl.innerHTML = '<tr><td colspan="9" class="empty"><h3>No despatches match</h3><p>Despatches are created from a Sales Order using the <strong>Create despatch</strong> button.</p></td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="9" class="empty"><h3>No records match</h3><p>Pick lists are created from a Sales Order using the <strong>Create pick list</strong> button.</p></td></tr>';
       return;
     }
     rowsEl.innerHTML = d.despatches.map(dn => `

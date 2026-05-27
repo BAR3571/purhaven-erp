@@ -38,26 +38,37 @@
 
 <div class="dn-grid">
   <div class="card accent-sky">
-    <h2 style="margin-top:0">Shipping</h2>
+    <h2 style="margin-top:0" id="ship-heading">Packaging &amp; shipping</h2>
+    <p style="color:var(--ink-soft);font-size:0.85rem;margin:0 0 12px;">Weight, package dims and packaging notes get captured during picking. Carrier &amp; tracking are only required at the final despatch step.</p>
     <form id="dn-form">
       <div class="field-row">
         <div class="field">
-          <label for="f-carrier">Carrier</label>
-          <input type="text" id="f-carrier" placeholder="DPD, Royal Mail, …">
+          <label for="f-weight">Total weight (kg)</label>
+          <input type="number" step="0.01" min="0" id="f-weight">
         </div>
         <div class="field">
-          <label for="f-tracking">Tracking #</label>
-          <input type="text" id="f-tracking">
+          <label for="f-packages">Number of packages</label>
+          <input type="number" min="1" id="f-packages" value="1">
         </div>
       </div>
       <div class="field-row">
         <div class="field">
-          <label for="f-weight">Weight (kg)</label>
-          <input type="number" step="0.01" min="0" id="f-weight">
+          <label for="f-dims">Package dims (L×W×H cm)</label>
+          <input type="text" id="f-dims" placeholder="e.g. 40×30×20">
         </div>
         <div class="field">
-          <label for="f-packages">Packages</label>
-          <input type="number" min="1" id="f-packages" value="1">
+          <label for="f-pack-notes">Packaging notes</label>
+          <input type="text" id="f-pack-notes" placeholder="e.g. fragile, 2× outer box">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="f-carrier">Carrier <span style="color:var(--ink-dim);font-weight:400;">(despatch)</span></label>
+          <input type="text" id="f-carrier" placeholder="DPD, Royal Mail, …">
+        </div>
+        <div class="field">
+          <label for="f-tracking">Tracking # <span style="color:var(--ink-dim);font-weight:400;">(despatch)</span></label>
+          <input type="text" id="f-tracking">
         </div>
       </div>
       <div class="field">
@@ -116,13 +127,17 @@
   }
 
   function fillHeader(dn) {
-    titleEl.textContent = `${dn.despatch_number} · ${dn.so_number} · ${dn.customer_name}`;
+    const isDespatched = dn.status === 'despatched';
+    const prefix = isDespatched ? 'Despatch' : 'Pick list';
+    titleEl.textContent = `${prefix} ${dn.despatch_number} · ${dn.so_number} · ${dn.customer_name}`;
     subtitleEl.textContent = `${dn.status} · warehouse ${dn.warehouse_code || '—'}` +
                              (dn.picker_name ? ` · picker ${dn.picker_name}` : (dn.picker_email ? ` · ${dn.picker_email}` : ''));
     document.getElementById('f-carrier').value  = dn.carrier || '';
     document.getElementById('f-tracking').value = dn.tracking_number || '';
     document.getElementById('f-weight').value   = dn.weight_kg ?? '';
     document.getElementById('f-packages').value = dn.number_of_packages || 1;
+    document.getElementById('f-dims').value     = dn.package_dims_cm || '';
+    document.getElementById('f-pack-notes').value = dn.packaging_notes || '';
     document.getElementById('f-notes').value    = dn.notes || '';
     shipToEl.innerHTML = `
       <strong>${fmt(dn.ship_to_name)}</strong><br>
@@ -133,9 +148,9 @@
   function fillActions(dn) {
     const buttons = [];
     if (dn.status === 'pending') buttons.push(`<button type="button" class="btn btn-primary" data-act="start-picking">▶ Start picking</button>`);
-    if (dn.status === 'picking') buttons.push(`<button type="button" class="btn btn-primary" data-act="confirm-picking">✓ Confirm picking</button>`);
+    if (dn.status === 'picking') buttons.push(`<button type="button" class="btn btn-primary" data-act="confirm-picking">✓ Confirm pick &amp; packaging</button>`);
     if (dn.status === 'packed') buttons.push(`<button type="button" class="btn btn-ghost" data-act="unpack">↶ Back to picking</button>`);
-    if (dn.status === 'packed') buttons.push(`<button type="button" class="btn btn-primary" data-act="despatch">🚚 Mark despatched</button>`);
+    if (dn.status === 'packed') buttons.push(`<button type="button" class="btn btn-primary" data-act="despatch">🚚 Confirm despatch</button>`);
     if (['pending','picking','packed'].includes(dn.status)) buttons.push(`<button type="button" class="btn btn-danger" data-act="cancel">Cancel</button>`);
     if (dn.status === 'pending') buttons.push(`<button type="button" class="btn btn-danger" data-act="delete">Delete</button>`);
     actionsEl.innerHTML = buttons.join(' ');
@@ -184,6 +199,8 @@
       tracking_number: document.getElementById('f-tracking').value || null,
       weight_kg: document.getElementById('f-weight').value || null,
       number_of_packages: parseInt(document.getElementById('f-packages').value, 10) || 1,
+      package_dims_cm: document.getElementById('f-dims').value || null,
+      packaging_notes: document.getElementById('f-pack-notes').value || null,
       notes: document.getElementById('f-notes').value || null
     };
     const r = await fetch('/api/despatches/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -208,7 +225,7 @@
     }
 
     if (act === 'confirm-picking') {
-      // Collect qty_picked + serials from the lines table
+      // Collect qty_picked + serials from the lines table, plus packaging from the header form
       const lines = [];
       currentDn.lines.forEach(l => {
         const tr = linesBody.querySelector(`tr[data-dnl="${l.id}"]`);
@@ -226,21 +243,34 @@
       });
       const r = await fetch('/api/despatches/' + id + '/status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'confirm-picking', lines })
+        body: JSON.stringify({
+          action: 'confirm-picking',
+          lines,
+          weight_kg: document.getElementById('f-weight').value || null,
+          number_of_packages: parseInt(document.getElementById('f-packages').value, 10) || 1,
+          package_dims_cm: document.getElementById('f-dims').value || null,
+          packaging_notes: document.getElementById('f-pack-notes').value || null
+        })
       });
       const d = await r.json();
       if (!d.ok) { setStatus('Picking failed: ' + d.error, 'err'); return; }
-      setStatus('Picking confirmed.', 'ok');
+      setStatus('Pick &amp; packaging confirmed — ready for despatch.', 'ok');
       load();
       return;
     }
 
     if (act === 'despatch') {
-      if (!confirm('Mark this despatch as shipped? Stock will be decremented, serials flipped to despatched, and the SO status updated.')) return;
+      const carrier = (document.getElementById('f-carrier').value || '').trim();
+      const tracking = (document.getElementById('f-tracking').value || '').trim();
+      if (!carrier || !tracking) {
+        setStatus('Enter carrier and tracking number above before confirming despatch.', 'err');
+        document.getElementById(carrier ? 'f-tracking' : 'f-carrier').focus();
+        return;
+      }
+      if (!confirm(`Confirm despatch via ${carrier} (${tracking})? Stock will be decremented, serials flipped to despatched, and the SO status updated.`)) return;
       const body = {
         action: 'despatch',
-        carrier: document.getElementById('f-carrier').value || null,
-        tracking_number: document.getElementById('f-tracking').value || null,
+        carrier, tracking_number: tracking,
         weight_kg: document.getElementById('f-weight').value || null,
         number_of_packages: parseInt(document.getElementById('f-packages').value, 10) || 1
       };

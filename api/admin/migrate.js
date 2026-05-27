@@ -477,7 +477,12 @@ const MIGRATIONS = [
   // Trace which despatch shipped a given serial
   `ALTER TABLE erp_product_serials ADD COLUMN IF NOT EXISTS despatch_id INTEGER REFERENCES erp_despatches(id) ON DELETE SET NULL`,
   `ALTER TABLE erp_product_serials ADD COLUMN IF NOT EXISTS despatch_line_id INTEGER REFERENCES erp_despatch_lines(id) ON DELETE SET NULL`,
-  `CREATE INDEX IF NOT EXISTS erp_serials_despatch_idx ON erp_product_serials(despatch_id)`
+  `CREATE INDEX IF NOT EXISTS erp_serials_despatch_idx ON erp_product_serials(despatch_id)`,
+
+  // Pick-list -> despatch flow: capture package dims + packaging notes during picking,
+  // carrier+tracking become required for the final despatch confirmation step
+  `ALTER TABLE erp_despatches ADD COLUMN IF NOT EXISTS package_dims_cm TEXT`,
+  `ALTER TABLE erp_despatches ADD COLUMN IF NOT EXISTS packaging_notes TEXT`
 ];
 
 export default async function handler(req, res) {
