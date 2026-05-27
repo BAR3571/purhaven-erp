@@ -140,7 +140,89 @@ const MIGRATIONS = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
 
-  `CREATE INDEX IF NOT EXISTS erp_supplier_addresses_supp_idx ON erp_supplier_addresses(supplier_id)`
+  `CREATE INDEX IF NOT EXISTS erp_supplier_addresses_supp_idx ON erp_supplier_addresses(supplier_id)`,
+
+  // ---------- Warehouses + Products & Stock (Phase 1 · Task #47) ----------
+  `CREATE TABLE IF NOT EXISTS erp_warehouses (
+    id SERIAL PRIMARY KEY,
+    code TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'own' CHECK (type IN ('own','consignment','third_party')),
+    notes TEXT,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  `INSERT INTO erp_warehouses (code, name, type)
+     VALUES ('MAIN', 'Main Stock — High Ongar', 'own')
+     ON CONFLICT (code) DO NOTHING`,
+
+  `CREATE TABLE IF NOT EXISTS erp_products (
+    id SERIAL PRIMARY KEY,
+    sku TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    category TEXT,
+    brand TEXT,
+    parent_id INTEGER REFERENCES erp_products(id) ON DELETE SET NULL,
+    manufacturer_id INTEGER REFERENCES erp_suppliers(id) ON DELETE SET NULL,
+    barcode TEXT,
+    ean TEXT,
+    hs_code TEXT,
+    country_of_origin TEXT,
+    weight_g INTEGER,
+    width_mm INTEGER,
+    height_mm INTEGER,
+    depth_mm INTEGER,
+    lead_time_weeks INTEGER,
+    vat_rate_percent INTEGER NOT NULL DEFAULT 20,
+    cost_price_pence INTEGER,
+    sale_price_pence INTEGER,
+    currency TEXT NOT NULL DEFAULT 'GBP',
+    min_stock_level INTEGER NOT NULL DEFAULT 0,
+    notes TEXT,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by INTEGER REFERENCES erp_users(id)
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_products_active_idx ON erp_products(active)`,
+  `CREATE INDEX IF NOT EXISTS erp_products_brand_idx ON erp_products(brand)`,
+  `CREATE INDEX IF NOT EXISTS erp_products_category_idx ON erp_products(category)`,
+  `CREATE INDEX IF NOT EXISTS erp_products_parent_idx ON erp_products(parent_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_products_manufacturer_idx ON erp_products(manufacturer_id)`,
+
+  `CREATE TABLE IF NOT EXISTS erp_stock_levels (
+    id SERIAL PRIMARY KEY,
+    product_id INTEGER NOT NULL REFERENCES erp_products(id) ON DELETE CASCADE,
+    warehouse_id INTEGER NOT NULL REFERENCES erp_warehouses(id),
+    qty_on_hand INTEGER NOT NULL DEFAULT 0,
+    qty_allocated INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (product_id, warehouse_id)
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_stock_levels_product_idx ON erp_stock_levels(product_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_stock_levels_warehouse_idx ON erp_stock_levels(warehouse_id)`,
+
+  `CREATE TABLE IF NOT EXISTS erp_stock_movements (
+    id BIGSERIAL PRIMARY KEY,
+    product_id INTEGER NOT NULL REFERENCES erp_products(id),
+    warehouse_id INTEGER NOT NULL REFERENCES erp_warehouses(id),
+    movement_type TEXT NOT NULL CHECK (movement_type IN ('receipt','despatch','adjustment','transfer_in','transfer_out','return','allocation','deallocation')),
+    qty INTEGER NOT NULL,
+    reference_type TEXT,
+    reference_id INTEGER,
+    notes TEXT,
+    created_by INTEGER REFERENCES erp_users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_stock_movements_product_idx ON erp_stock_movements(product_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_stock_movements_warehouse_idx ON erp_stock_movements(warehouse_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_stock_movements_ref_idx ON erp_stock_movements(reference_type, reference_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_stock_movements_created_idx ON erp_stock_movements(created_at DESC)`
 ];
 
 export default async function handler(req, res) {

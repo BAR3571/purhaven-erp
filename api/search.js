@@ -48,6 +48,23 @@ export default async function handler(req, res) {
       FROM erp_suppliers
       WHERE active = TRUE
         AND (name ILIKE ${like} OR account_code ILIKE ${like} OR vat_number ILIKE ${like})
+
+      UNION ALL
+
+      SELECT
+        'product'     AS type,
+        id::text      AS id,
+        name          AS label,
+        sku           AS sub,
+        '/products/detail?id=' || id AS href,
+        CASE
+          WHEN sku ILIKE ${like}     THEN 1
+          WHEN name ILIKE ${q + '%'} THEN 2
+          ELSE 3
+        END AS rank
+      FROM erp_products
+      WHERE active = TRUE
+        AND (name ILIKE ${like} OR sku ILIKE ${like} OR barcode ILIKE ${like} OR ean ILIKE ${like})
     ) hits
     ORDER BY rank ASC, label ASC
     LIMIT ${limit}

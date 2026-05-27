@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Product · Purhaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  .twocol { display: grid; grid-template-columns: 3fr 2fr; gap: 18px; align-items: start; }
+  @media (max-width: 1000px) { .twocol { grid-template-columns: 1fr; } }
+  .stock-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .stock-row:last-child { border-bottom: none; }
+  .stock-row .num { font-weight: 700; font-size: 1.1rem; min-width: 60px; text-align: right; }
+  .stock-row .num.alloc { color: var(--ink-soft); font-weight: 500; }
+  .err { color: #991b1b; }
+  .ok { color: #065f46; }
+  .movements {
+    max-height: 380px;
+    overflow-y: auto;
+    font-size: 0.85rem;
+  }
+  .movement {
+    display: grid;
+    grid-template-columns: auto auto 1fr auto;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .movement:last-child { border-bottom: none; }
+  .movement .when { color: var(--ink-dim); font-size: 0.78rem; }
+</style>
+</head>
+<body data-page="products">
+
+<div id="page-header" class="page-header">
+  <div>
+    <a href="/products" style="color:var(--ink-dim);font-size:0.85rem;">← Products &amp; Stock</a>
+    <h1 id="title" style="margin:4px 0 0;">Product</h1>
+  </div>
+  <div class="actions" id="actions"></div>
+</div>
+
+<div id="status-msg" style="margin-bottom:12px;"></div>
+
+<div class="twocol">
+  <div>
+    <div class="card accent-sky">
+      <h2 style="margin-top:0">Details</h2>
+      <form id="product-form">
+        <div class="field-row">
+          <div class="field">
+            <label for="f-sku">SKU *</label>
+            <input type="text" id="f-sku" name="sku" required style="text-transform:uppercase;">
+          </div>
+          <div class="field">
+            <label for="f-currency">Currency</label>
+            <select id="f-currency" name="currency">
+              <option value="GBP">GBP</option>
+              <option value="EUR">EUR</option>
+              <option value="USD">USD</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="f-name">Name *</label>
+          <input type="text" id="f-name" name="name" required>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="f-brand">Brand</label>
+            <input type="text" id="f-brand" name="brand" placeholder="MedicAir / MAXVAC">
+          </div>
+          <div class="field">
+            <label for="f-category">Category</label>
+            <select id="f-category" name="category">
+              <option value="">—</option>
+              <option value="purifier">Purifier</option>
+              <option value="filter">Filter</option>
+              <option value="uv-lamp">UV lamp</option>
+              <option value="accessory">Accessory</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="f-manufacturer">Manufacturer (supplier)</label>
+            <select id="f-manufacturer" name="manufacturer_id">
+              <option value="">—</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="f-parent">Belongs to (parent product)</label>
+            <select id="f-parent" name="parent_id">
+              <option value="">— stand-alone —</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="f-description">Description</label>
+          <textarea id="f-description" name="description" rows="2"></textarea>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="f-barcode">Barcode</label>
+            <input type="text" id="f-barcode" name="barcode">
+          </div>
+          <div class="field">
+            <label for="f-ean">EAN</label>
+            <input type="text" id="f-ean" name="ean">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="f-hs">HS code</label>
+            <input type="text" id="f-hs" name="hs_code">
+          </div>
+          <div class="field">
+            <label for="f-coo">Country of origin</label>
+            <input type="text" id="f-coo" name="country_of_origin" placeholder="GB / DE / CH">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="f-cost">Cost price (£)</label>
+            <input type="number" id="f-cost" step="0.01" min="0">
+          </div>
+          <div class="field">
+            <label for="f-sale">Sale price inc. VAT (£)</label>
+            <input type="number" id="f-sale" step="0.01" min="0">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="f-vat">VAT rate (%)</label>
+            <input type="number" id="f-vat" name="vat_rate_percent" min="0" max="100" value="20">
+          </div>
+          <div class="field">
+            <label for="f-min">Min stock level</label>
+            <input type="number" id="f-min" name="min_stock_level" min="0" value="0">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="f-weight">Weight (g)</label>
+            <input type="number" id="f-weight" name="weight_g" min="0">
+          </div>
+          <div class="field">
+            <label for="f-lead">Lead time (weeks)</label>
+            <input type="number" id="f-lead" name="lead_time_weeks" min="0">
+          </div>
+        </div>
+        <div class="field">
+          <label for="f-notes">Notes</label>
+          <textarea id="f-notes" name="notes" rows="2"></textarea>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button type="submit" class="btn btn-primary" id="save-btn">Save</button>
+          <button type="button" class="btn btn-danger" id="deactivate-btn" style="display:none;">Deactivate</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="sidepane" style="display:none;">
+    <div class="card accent-green">
+      <h2 style="margin-top:0">Stock by warehouse</h2>
+      <div id="stock-list"></div>
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
+        <h3 style="margin:0 0 8px;font-size:0.92rem;">Adjust stock</h3>
+        <div class="field-row" style="margin-bottom:8px;">
+          <div class="field" style="margin-bottom:0;">
+            <label for="adj-delta">Delta (+ in, − out)</label>
+            <input type="number" id="adj-delta" placeholder="e.g. +10 or -3">
+          </div>
+          <div class="field" style="margin-bottom:0;">
+            <label for="adj-warehouse">Warehouse</label>
+            <select id="adj-warehouse"></select>
+          </div>
+        </div>
+        <div class="field" style="margin-bottom:8px;">
+          <label for="adj-notes">Reason / note</label>
+          <input type="text" id="adj-notes" placeholder="e.g. opening balance, breakage…">
+        </div>
+        <button type="button" class="btn btn-sky" id="adj-btn">Apply adjustment</button>
+      </div>
+    </div>
+
+    <div class="card accent-purple">
+      <h2 style="margin-top:0">Recent stock movements</h2>
+      <div class="movements" id="movements"></div>
+    </div>
+
+    <div class="card accent-orange" id="children-card" style="display:none;">
+      <h2 style="margin-top:0">Parts &amp; accessories</h2>
+      <div id="children"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { mountShell, fmt, money, dateOnly } from '/app.js';
+  await mountShell();
+
+  const params = new URLSearchParams(window.location.search);
+  const rawId = params.get('id');
+  const isNew = !rawId || rawId === 'new';
+  const id = isNew ? null : parseInt(rawId, 10);
+
+  const titleEl = document.getElementById('title');
+  const statusEl = document.getElementById('status-msg');
+  const form = document.getElementById('product-form');
+  const saveBtn = document.getElementById('save-btn');
+  const deactivateBtn = document.getElementById('deactivate-btn');
+  const sidepane = document.getElementById('sidepane');
+  const stockList = document.getElementById('stock-list');
+  const movementsEl = document.getElementById('movements');
+  const childrenCard = document.getElementById('children-card');
+  const childrenEl = document.getElementById('children');
+  const adjWarehouseSel = document.getElementById('adj-warehouse');
+
+  function setStatus(msg, cls) {
+    statusEl.innerHTML = msg
+      ? `<div class="card accent-${cls === 'err' ? 'pink' : 'green'}" style="padding:10px 14px;"><span class="${cls}">${msg}</span></div>`
+      : '';
+    if (msg) setTimeout(() => { statusEl.innerHTML = ''; }, 4000);
+  }
+
+  // Load suppliers + products for dropdowns
+  let warehouses = [];
+  async function preload() {
+    const [whR, supR, prodR] = await Promise.all([
+      fetch('/api/warehouses').then(r => r.json()),
+      fetch('/api/suppliers').then(r => r.json()),
+      fetch('/api/products').then(r => r.json())
+    ]);
+    if (whR.ok) {
+      warehouses = whR.warehouses;
+      adjWarehouseSel.innerHTML = warehouses.map(w => `<option value="${w.id}">${w.code} — ${w.name}</option>`).join('');
+    }
+    if (supR.ok) {
+      const sel = document.getElementById('f-manufacturer');
+      for (const s of supR.suppliers) sel.add(new Option(`${s.name} (${s.account_code})`, s.id));
+    }
+    if (prodR.ok) {
+      const sel = document.getElementById('f-parent');
+      for (const p of prodR.products) {
+        if (p.id === id) continue;
+        sel.add(new Option(`${p.sku} — ${p.name}`, p.id));
+      }
+    }
+  }
+
+  function fillForm(p) {
+    document.getElementById('f-sku').value      = p.sku || '';
+    document.getElementById('f-name').value     = p.name || '';
+    document.getElementById('f-currency').value = p.currency || 'GBP';
+    document.getElementById('f-brand').value    = p.brand || '';
+    document.getElementById('f-category').value = p.category || '';
+    document.getElementById('f-manufacturer').value = p.manufacturer_id || '';
+    document.getElementById('f-parent').value   = p.parent_id || '';
+    document.getElementById('f-description').value = p.description || '';
+    document.getElementById('f-barcode').value  = p.barcode || '';
+    document.getElementById('f-ean').value      = p.ean || '';
+    document.getElementById('f-hs').value       = p.hs_code || '';
+    document.getElementById('f-coo').value      = p.country_of_origin || '';
+    document.getElementById('f-cost').value     = p.cost_price_pence != null ? (p.cost_price_pence / 100) : '';
+    document.getElementById('f-sale').value     = p.sale_price_pence != null ? (p.sale_price_pence / 100) : '';
+    document.getElementById('f-vat').value      = p.vat_rate_percent ?? 20;
+    document.getElementById('f-min').value      = p.min_stock_level ?? 0;
+    document.getElementById('f-weight').value   = p.weight_g ?? '';
+    document.getElementById('f-lead').value     = p.lead_time_weeks ?? '';
+    document.getElementById('f-notes').value    = p.notes || '';
+  }
+
+  function renderStock(stock) {
+    if (!stock || stock.length === 0) {
+      stockList.innerHTML = '<p style="color:var(--ink-dim);margin:0;">No stock rows yet.</p>';
+      return;
+    }
+    stockList.innerHTML = stock.map(s => {
+      const available = s.qty_on_hand - s.qty_allocated;
+      return `
+        <div class="stock-row">
+          <div>
+            <strong>${s.warehouse_code}</strong>
+            <div style="color:var(--ink-soft);font-size:0.78rem;">${s.warehouse_name}</div>
+          </div>
+          <div class="num">${s.qty_on_hand}</div>
+          <div class="num alloc">−${s.qty_allocated}</div>
+          <div class="num" style="color:${available < 0 ? 'var(--red)' : 'var(--green)'};">= ${available}</div>
+        </div>
+      `;
+    }).join('') + `
+      <div style="display:flex;justify-content:space-between;color:var(--ink-soft);font-size:0.75rem;margin-top:6px;padding-top:6px;border-top:1px solid var(--border-soft);">
+        <span>warehouse</span>
+        <span>on hand · alloc · avail</span>
+      </div>
+    `;
+  }
+
+  function renderMovements(movements) {
+    if (!movements || movements.length === 0) {
+      movementsEl.innerHTML = '<p style="color:var(--ink-dim);margin:0;">No movements yet.</p>';
+      return;
+    }
+    movementsEl.innerHTML = movements.map(m => `
+      <div class="movement">
+        <span class="when">${dateOnly(m.created_at)}</span>
+        <span><span class="pill pill-${m.movement_type === 'receipt' || m.qty > 0 ? 'despatched' : 'cancelled'}" style="font-size:0.65rem;">${m.movement_type}</span></span>
+        <span><strong style="color:${m.qty > 0 ? 'var(--green)' : 'var(--red)'};">${m.qty > 0 ? '+' + m.qty : m.qty}</strong> at ${m.warehouse_code}${m.notes ? ' — ' + fmt(m.notes) : ''}</span>
+        <span style="color:var(--ink-dim);font-size:0.75rem;">${m.user_email ? fmt(m.user_email).split('@')[0] : ''}</span>
+      </div>
+    `).join('');
+  }
+
+  function renderChildren(children) {
+    if (!children || children.length === 0) {
+      childrenCard.style.display = 'none';
+      return;
+    }
+    childrenCard.style.display = 'block';
+    childrenEl.innerHTML = children.map(c => `
+      <div class="stock-row" style="grid-template-columns:1fr auto;">
+        <a href="/products/detail?id=${c.id}"><strong>${fmt(c.sku)}</strong> — ${fmt(c.name)}</a>
+        <span class="pill pill-draft" style="font-size:0.65rem;">${fmt(c.category)}</span>
+      </div>
+    `).join('');
+  }
+
+  async function loadProduct() {
+    if (isNew) {
+      titleEl.textContent = 'New product';
+      return;
+    }
+    const r = await fetch('/api/products/' + id);
+    const d = await r.json();
+    if (!d.ok) { setStatus('Failed to load: ' + d.error, 'err'); return; }
+    fillForm(d.product);
+    titleEl.textContent = d.product.name + ' · ' + d.product.sku;
+    sidepane.style.display = 'block';
+    deactivateBtn.style.display = d.product.active ? 'inline-flex' : 'none';
+    renderStock(d.product.stock);
+    renderMovements(d.product.movements);
+    renderChildren(d.product.children);
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+
+    const costStr = document.getElementById('f-cost').value;
+    const saleStr = document.getElementById('f-sale').value;
+
+    const body = {
+      sku:         document.getElementById('f-sku').value,
+      name:        document.getElementById('f-name').value,
+      description: document.getElementById('f-description').value || null,
+      category:    document.getElementById('f-category').value || null,
+      brand:       document.getElementById('f-brand').value || null,
+      parent_id:   parseInt(document.getElementById('f-parent').value, 10) || null,
+      manufacturer_id: parseInt(document.getElementById('f-manufacturer').value, 10) || null,
+      barcode:     document.getElementById('f-barcode').value || null,
+      ean:         document.getElementById('f-ean').value || null,
+      hs_code:     document.getElementById('f-hs').value || null,
+      country_of_origin: document.getElementById('f-coo').value || null,
+      cost_price_pence: costStr ? Math.round(parseFloat(costStr) * 100) : null,
+      sale_price_pence: saleStr ? Math.round(parseFloat(saleStr) * 100) : null,
+      currency:    document.getElementById('f-currency').value,
+      vat_rate_percent: parseInt(document.getElementById('f-vat').value, 10) || 20,
+      min_stock_level: parseInt(document.getElementById('f-min').value, 10) || 0,
+      weight_g:    parseInt(document.getElementById('f-weight').value, 10) || null,
+      lead_time_weeks: parseInt(document.getElementById('f-lead').value, 10) || null,
+      notes:       document.getElementById('f-notes').value || null
+    };
+
+    const url = isNew ? '/api/products' : '/api/products/' + id;
+    const method = isNew ? 'POST' : 'PUT';
+    const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save';
+    if (!d.ok) { setStatus('Save failed: ' + d.error, 'err'); return; }
+    if (isNew) {
+      window.location.href = '/products/detail?id=' + d.product.id;
+    } else {
+      setStatus('Saved.', 'ok');
+      loadProduct();
+    }
+  });
+
+  deactivateBtn.addEventListener('click', async () => {
+    if (!confirm('Deactivate this product? You can re-activate later.')) return;
+    const r = await fetch('/api/products/' + id, { method: 'DELETE' });
+    const d = await r.json();
+    if (!d.ok) { setStatus('Failed: ' + d.error, 'err'); return; }
+    window.location.href = '/products';
+  });
+
+  document.getElementById('adj-btn').addEventListener('click', async () => {
+    const delta = parseInt(document.getElementById('adj-delta').value, 10);
+    if (!delta) { setStatus('Enter a non-zero delta', 'err'); return; }
+    const r = await fetch('/api/products/' + id + '/adjust-stock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        delta,
+        warehouse_id: parseInt(adjWarehouseSel.value, 10) || null,
+        notes: document.getElementById('adj-notes').value || null
+      })
+    });
+    const d = await r.json();
+    if (!d.ok) { setStatus('Adjust failed: ' + d.error, 'err'); return; }
+    setStatus(`Stock adjusted by ${delta}, now ${d.qty_on_hand} on hand.`, 'ok');
+    document.getElementById('adj-delta').value = '';
+    document.getElementById('adj-notes').value = '';
+    loadProduct();
+  });
+
+  await preload();
+  loadProduct();
+</script>
+
+</body>
+</html>

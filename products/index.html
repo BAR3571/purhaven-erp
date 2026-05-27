@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Products &amp; Stock · Purhaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body data-page="products">
+
+<div class="page-header">
+  <h1>🧰 Products &amp; Stock</h1>
+  <div class="actions">
+    <a href="/products/detail?id=new" class="btn btn-primary">+ New Product</a>
+  </div>
+</div>
+
+<div class="search-row">
+  <input type="search" id="q" placeholder="Search name, SKU, barcode…">
+  <select id="brand-filter">
+    <option value="">All brands</option>
+  </select>
+  <select id="category-filter">
+    <option value="">All categories</option>
+    <option value="purifier">Purifier</option>
+    <option value="filter">Filter</option>
+    <option value="uv-lamp">UV lamp</option>
+    <option value="accessory">Accessory</option>
+    <option value="other">Other</option>
+  </select>
+  <label style="display:flex;align-items:center;gap:6px;color:var(--ink-soft);font-size:0.85rem;">
+    <input type="checkbox" id="include-inactive"> Show inactive
+  </label>
+</div>
+
+<div class="card" style="padding: 0;">
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>SKU</th>
+          <th>Name</th>
+          <th>Brand</th>
+          <th>Category</th>
+          <th>Manufacturer</th>
+          <th style="text-align:right">Cost</th>
+          <th style="text-align:right">Sale</th>
+          <th style="text-align:right">On hand</th>
+          <th style="text-align:right">Allocated</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="rows">
+        <tr><td colspan="11" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script type="module">
+  import { mountShell, fmt, money } from '/app.js';
+  await mountShell();
+
+  const rowsEl = document.getElementById('rows');
+  const q = document.getElementById('q');
+  const brandFilter = document.getElementById('brand-filter');
+  const categoryFilter = document.getElementById('category-filter');
+  const incInactive = document.getElementById('include-inactive');
+  let timer;
+
+  async function load() {
+    const params = new URLSearchParams();
+    if (q.value.trim()) params.set('q', q.value.trim());
+    if (brandFilter.value) params.set('brand', brandFilter.value);
+    if (categoryFilter.value) params.set('category', categoryFilter.value);
+    if (incInactive.checked) params.set('includeInactive', '1');
+    rowsEl.innerHTML = '<tr><td colspan="11" class="empty">Loading…</td></tr>';
+    const r = await fetch('/api/products?' + params.toString());
+    const d = await r.json();
+    if (!d.ok) { rowsEl.innerHTML = `<tr><td colspan="11" class="empty">Error: ${d.error}</td></tr>`; return; }
+    if (d.products.length === 0) {
+      rowsEl.innerHTML = '<tr><td colspan="11" class="empty"><h3>No products yet</h3><p>Click <strong>+ New Product</strong> to add the first one.</p></td></tr>';
+      return;
+    }
+
+    // Populate brand filter from results (one-shot, doesn't re-trigger load)
+    if (brandFilter.options.length === 1) {
+      const brands = [...new Set(d.products.map(p => p.brand).filter(Boolean))].sort();
+      for (const b of brands) brandFilter.add(new Option(b, b));
+    }
+
+    rowsEl.innerHTML = d.products.map(p => {
+      const onHand = parseInt(p.qty_on_hand_total || 0, 10);
+      const allocated = parseInt(p.qty_allocated_total || 0, 10);
+      const available = onHand - allocated;
+      const minLevel = parseInt(p.min_stock_level || 0, 10);
+      const lowStock = minLevel > 0 && available <= minLevel;
+      return `
+        <tr>
+          <td class="mono"><a href="/products/detail?id=${p.id}">${fmt(p.sku)}</a></td>
+          <td><a href="/products/detail?id=${p.id}"><strong>${fmt(p.name)}</strong></a></td>
+          <td>${fmt(p.brand)}</td>
+          <td>${fmt(p.category)}</td>
+          <td>${fmt(p.manufacturer_name)}</td>
+          <td style="text-align:right">${p.cost_price_pence != null ? money(p.cost_price_pence, p.currency) : '—'}</td>
+          <td style="text-align:right">${p.sale_price_pence != null ? money(p.sale_price_pence, p.currency) : '—'}</td>
+          <td style="text-align:right"><strong style="color:${lowStock ? 'var(--red)' : 'var(--ink)'}">${onHand}</strong></td>
+          <td style="text-align:right">${allocated || '—'}</td>
+          <td>
+            ${p.active ? '<span class="pill pill-despatched">Active</span>' : '<span class="pill pill-cancelled">Inactive</span>'}
+            ${lowStock ? ' <span class="pill pill-on-hold">Low stock</span>' : ''}
+          </td>
+          <td><a href="/products/detail?id=${p.id}" class="btn btn-ghost">Open →</a></td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 200); });
+  brandFilter.addEventListener('change', load);
+  categoryFilter.addEventListener('change', load);
+  incInactive.addEventListener('change', load);
+  load();
+</script>
+
+</body>
+</html>
