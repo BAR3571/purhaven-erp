@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Despatch · PurHaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  .dn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 1000px) { .dn-grid { grid-template-columns: 1fr; } }
+  .err { color: #991b1b; }
+  .ok { color: #065f46; }
+  .pick-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border-soft); }
+  .pick-row:last-child { border-bottom: none; }
+  .pick-row input.num { width: 70px; text-align: right; }
+  .pick-row .serials { grid-column: 1 / -1; margin-top: 8px; }
+  .pick-row textarea { width: 100%; min-height: 64px; font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem; }
+</style>
+</head>
+<body data-page="orders">
+
+<div id="tabs-mount"></div>
+
+<div class="page-header">
+  <div>
+    <a href="/orders/despatch" style="color:var(--ink-dim);font-size:0.85rem;">← Despatches</a>
+    <h1 id="title" style="margin:4px 0 0;">Despatch</h1>
+    <div id="subtitle" style="color:var(--ink-soft);margin-top:4px;font-size:0.9rem;"></div>
+  </div>
+  <div class="actions" id="actions"></div>
+</div>
+
+<div id="status-msg" style="margin-bottom:12px;"></div>
+
+<div class="dn-grid">
+  <div class="card accent-sky">
+    <h2 style="margin-top:0">Shipping</h2>
+    <form id="dn-form">
+      <div class="field-row">
+        <div class="field">
+          <label for="f-carrier">Carrier</label>
+          <input type="text" id="f-carrier" placeholder="DPD, Royal Mail, …">
+        </div>
+        <div class="field">
+          <label for="f-tracking">Tracking #</label>
+          <input type="text" id="f-tracking">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="f-weight">Weight (kg)</label>
+          <input type="number" step="0.01" min="0" id="f-weight">
+        </div>
+        <div class="field">
+          <label for="f-packages">Packages</label>
+          <input type="number" min="1" id="f-packages" value="1">
+        </div>
+      </div>
+      <div class="field">
+        <label for="f-notes">Notes</label>
+        <textarea id="f-notes" rows="2"></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary" id="save-btn">Save</button>
+    </form>
+  </div>
+
+  <div class="card accent-orange">
+    <h2 style="margin-top:0">Deliver to</h2>
+    <div id="ship-to"></div>
+  </div>
+</div>
+
+<div class="card accent-purple">
+  <h2 style="margin-top:0">Lines</h2>
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>SKU</th>
+          <th>Description</th>
+          <th style="text-align:right">To despatch</th>
+          <th style="text-align:right">Picked</th>
+          <th style="text-align:right">Despatched</th>
+          <th>Serials</th>
+        </tr>
+      </thead>
+      <tbody id="lines-body">
+        <tr><td colspan="6" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script type="module">
+  import { mountShell, renderOrdersTabs, fmt } from '/app.js';
+  await mountShell();
+  document.getElementById('tabs-mount').innerHTML = `<div class="orders-tabs">${renderOrdersTabs('despatch')}</div>`;
+
+  const id = parseInt(new URLSearchParams(window.location.search).get('id'), 10);
+  if (!id) location.href = '/orders/despatch';
+
+  const titleEl = document.getElementById('title');
+  const subtitleEl = document.getElementById('subtitle');
+  const actionsEl = document.getElementById('actions');
+  const statusEl = document.getElementById('status-msg');
+  const shipToEl = document.getElementById('ship-to');
+  const linesBody = document.getElementById('lines-body');
+
+  function setStatus(msg, cls) {
+    statusEl.innerHTML = msg ? `<div class="card accent-${cls === 'err' ? 'pink' : 'green'}" style="padding:10px 14px;"><span class="${cls}">${msg}</span></div>` : '';
+    if (msg) setTimeout(() => { statusEl.innerHTML = ''; }, 4500);
+  }
+
+  function fillHeader(dn) {
+    titleEl.textContent = `${dn.despatch_number} · ${dn.so_number} · ${dn.customer_name}`;
+    subtitleEl.textContent = `${dn.status} · warehouse ${dn.warehouse_code || '—'}` +
+                             (dn.picker_name ? ` · picker ${dn.picker_name}` : (dn.picker_email ? ` · ${dn.picker_email}` : ''));
+    document.getElementById('f-carrier').value  = dn.carrier || '';
+    document.getElementById('f-tracking').value = dn.tracking_number || '';
+    document.getElementById('f-weight').value   = dn.weight_kg ?? '';
+    document.getElementById('f-packages').value = dn.number_of_packages || 1;
+    document.getElementById('f-notes').value    = dn.notes || '';
+    shipToEl.innerHTML = `
+      <strong>${fmt(dn.ship_to_name)}</strong><br>
+      ${[dn.ship_to_line1, dn.ship_to_line2, dn.ship_to_city, dn.ship_to_county, dn.ship_to_postcode, dn.ship_to_country].filter(Boolean).map(fmt).join('<br>')}
+    `;
+  }
+
+  function fillActions(dn) {
+    const buttons = [];
+    if (dn.status === 'pending') buttons.push(`<button type="button" class="btn btn-primary" data-act="start-picking">▶ Start picking</button>`);
+    if (dn.status === 'picking') buttons.push(`<button type="button" class="btn btn-primary" data-act="confirm-picking">✓ Confirm picking</button>`);
+    if (dn.status === 'packed') buttons.push(`<button type="button" class="btn btn-ghost" data-act="unpack">↶ Back to picking</button>`);
+    if (dn.status === 'packed') buttons.push(`<button type="button" class="btn btn-primary" data-act="despatch">🚚 Mark despatched</button>`);
+    if (['pending','picking','packed'].includes(dn.status)) buttons.push(`<button type="button" class="btn btn-danger" data-act="cancel">Cancel</button>`);
+    if (dn.status === 'pending') buttons.push(`<button type="button" class="btn btn-danger" data-act="delete">Delete</button>`);
+    actionsEl.innerHTML = buttons.join(' ');
+  }
+
+  function renderLines(dn) {
+    const editable = dn.status === 'picking';
+    linesBody.innerHTML = dn.lines.map(l => {
+      const serialsList = (l.assigned_serials || []).map(s => `<span class="alloc-chip serial" style="font-family:ui-monospace,Menlo,monospace">${fmt(s.serial_number)}</span>`).join('');
+      return `
+        <tr data-dnl="${l.id}" data-pid="${l.product_id || ''}" data-needs-serial="${l.requires_serial ? '1' : ''}">
+          <td class="mono"><strong>${fmt(l.sku)}</strong></td>
+          <td>${fmt(l.description)}</td>
+          <td style="text-align:right">${l.qty_to_despatch}</td>
+          <td style="text-align:right">
+            ${editable
+              ? `<input class="num qty-picked-in" type="number" min="0" max="${l.qty_to_despatch}" value="${l.qty_picked || l.qty_to_despatch}">`
+              : `<strong>${l.qty_picked}</strong>`}
+          </td>
+          <td style="text-align:right" style="color:${l.qty_despatched > 0 ? 'var(--green)' : 'var(--ink-dim)'};">${l.qty_despatched}</td>
+          <td>
+            ${editable && l.requires_serial
+              ? `<textarea class="serials-in" rows="3" placeholder="One serial per line">${(l.assigned_serials || []).map(s => s.serial_number).join('\n')}</textarea>`
+              : (serialsList || '<span style="color:var(--ink-dim)">—</span>')}
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  let currentDn = null;
+  async function load() {
+    const r = await fetch('/api/despatches/' + id);
+    const d = await r.json();
+    if (!d.ok) { setStatus('Load failed: ' + d.error, 'err'); return; }
+    currentDn = d.despatch;
+    fillHeader(currentDn);
+    fillActions(currentDn);
+    renderLines(currentDn);
+  }
+
+  document.getElementById('dn-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {
+      carrier: document.getElementById('f-carrier').value || null,
+      tracking_number: document.getElementById('f-tracking').value || null,
+      weight_kg: document.getElementById('f-weight').value || null,
+      number_of_packages: parseInt(document.getElementById('f-packages').value, 10) || 1,
+      notes: document.getElementById('f-notes').value || null
+    };
+    const r = await fetch('/api/despatches/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!d.ok) { setStatus('Save failed: ' + d.error, 'err'); return; }
+    setStatus('Saved.', 'ok');
+    load();
+  });
+
+  actionsEl.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    const act = btn.dataset.act;
+
+    if (act === 'delete') {
+      if (!confirm('Delete this pending despatch?')) return;
+      const r = await fetch('/api/despatches/' + id, { method: 'DELETE' });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Delete failed: ' + d.error, 'err'); return; }
+      location.href = '/orders/despatch';
+      return;
+    }
+
+    if (act === 'confirm-picking') {
+      // Collect qty_picked + serials from the lines table
+      const lines = [];
+      currentDn.lines.forEach(l => {
+        const tr = linesBody.querySelector(`tr[data-dnl="${l.id}"]`);
+        const qtyEl = tr.querySelector('.qty-picked-in');
+        const serialsEl = tr.querySelector('.serials-in');
+        if (!qtyEl) return;
+        const serials = serialsEl
+          ? serialsEl.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+          : [];
+        lines.push({
+          despatch_line_id: l.id,
+          qty_picked: parseInt(qtyEl.value, 10),
+          serials
+        });
+      });
+      const r = await fetch('/api/despatches/' + id + '/status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'confirm-picking', lines })
+      });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Picking failed: ' + d.error, 'err'); return; }
+      setStatus('Picking confirmed.', 'ok');
+      load();
+      return;
+    }
+
+    if (act === 'despatch') {
+      if (!confirm('Mark this despatch as shipped? Stock will be decremented, serials flipped to despatched, and the SO status updated.')) return;
+      const body = {
+        action: 'despatch',
+        carrier: document.getElementById('f-carrier').value || null,
+        tracking_number: document.getElementById('f-tracking').value || null,
+        weight_kg: document.getElementById('f-weight').value || null,
+        number_of_packages: parseInt(document.getElementById('f-packages').value, 10) || 1
+      };
+      const r = await fetch('/api/despatches/' + id + '/status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Despatch failed: ' + d.error, 'err'); return; }
+      setStatus('Despatched.', 'ok');
+      load();
+      return;
+    }
+
+    const prompts = {
+      'start-picking': 'Start picking this despatch?',
+      'unpack':        'Back to picking? You can re-confirm afterwards.',
+      'cancel':        'Cancel this despatch? Stock returns and serials are released.'
+    };
+    if (!confirm(prompts[act])) return;
+    const r = await fetch('/api/despatches/' + id + '/status', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: act })
+    });
+    const d = await r.json();
+    if (!d.ok) { setStatus('Action failed: ' + d.error, 'err'); return; }
+    load();
+  });
+
+  load();
+</script>
+
+</body>
+</html>

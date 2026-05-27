@@ -103,6 +103,26 @@ export default async function handler(req, res) {
       WHERE po.po_number ILIKE ${like}
          OR po.supplier_ref ILIKE ${like}
          OR s.name ILIKE ${like}
+
+      UNION ALL
+
+      SELECT
+        'despatch'      AS type,
+        dn.id::text     AS id,
+        c.name          AS label,
+        dn.despatch_number AS sub,
+        '/orders/despatch/detail?id=' || dn.id AS href,
+        CASE
+          WHEN dn.despatch_number ILIKE ${like} THEN 1
+          WHEN dn.tracking_number ILIKE ${like} THEN 2
+          ELSE 3
+        END AS rank
+      FROM erp_despatches dn
+      JOIN erp_sales_orders so ON so.id = dn.so_id
+      JOIN erp_customers c ON c.id = so.customer_id
+      WHERE dn.despatch_number ILIKE ${like}
+         OR dn.tracking_number ILIKE ${like}
+         OR so.so_number ILIKE ${like}
     ) hits
     ORDER BY rank ASC, label ASC
     LIMIT ${limit}

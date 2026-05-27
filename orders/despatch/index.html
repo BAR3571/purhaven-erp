@@ -11,16 +11,104 @@
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body data-page="orders">
+
 <div id="tabs-mount"></div>
-<div class="page-header"><h1>🚚 Despatch</h1></div>
-<div class="card accent-sky">
-  <h2 style="margin-top:0">Coming next</h2>
-  <p style="color:var(--ink-soft);margin:0;">Tasks #51 + #52. Picking queue → assign → start picking → pack into parcels → confirm packed → despatched. Each step generates paperwork (packing list, picking note, commercial invoice, CI per box / per pallet, parcel labels, despatch note) and pushes the PDFs to OneDrive.</p>
+
+<div class="page-header">
+  <h1>🚚 Despatches</h1>
+  <div class="actions" id="filter-chips"></div>
 </div>
+
+<div class="search-row">
+  <input type="search" id="q" placeholder="Search DN#, SO#, customer, tracking…">
+</div>
+
+<div class="card" style="padding: 0;">
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>DN</th>
+          <th>SO / cust ref</th>
+          <th>Customer</th>
+          <th>Delivery town</th>
+          <th>Carrier</th>
+          <th>Status</th>
+          <th>Assigned to</th>
+          <th style="text-align:right">Lines</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="rows">
+        <tr><td colspan="9" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <script type="module">
-  import { mountShell, renderOrdersTabs } from '/app.js';
+  import { mountShell, renderOrdersTabs, fmt } from '/app.js';
   await mountShell();
   document.getElementById('tabs-mount').innerHTML = `<div class="orders-tabs">${renderOrdersTabs('despatch')}</div>`;
+
+  const FILTERS = [
+    { key: '',         label: 'All', count: null },
+    { key: 'pending',  label: '⏳ Picking queue' },
+    { key: 'picking',  label: '📦 In picking' },
+    { key: 'packed',   label: '✅ To confirm' },
+    { key: 'despatched', label: '🚚 Despatched' }
+  ];
+  let activeStatus = 'pending';
+  let timer;
+  const rowsEl = document.getElementById('rows');
+  const q = document.getElementById('q');
+  const chipsEl = document.getElementById('filter-chips');
+
+  function renderChips() {
+    chipsEl.innerHTML = FILTERS.map(f =>
+      `<button type="button" class="chip ${f.key === activeStatus ? 'active' : ''}" data-status="${f.key}">${f.label}</button>`
+    ).join('');
+  }
+  renderChips();
+
+  chipsEl.addEventListener('click', (e) => {
+    const c = e.target.closest('[data-status]');
+    if (!c) return;
+    activeStatus = c.dataset.status;
+    renderChips();
+    load();
+  });
+
+  async function load() {
+    const params = new URLSearchParams();
+    if (q.value.trim()) params.set('q', q.value.trim());
+    if (activeStatus) params.set('status', activeStatus);
+    rowsEl.innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
+    const r = await fetch('/api/despatches?' + params.toString());
+    const d = await r.json();
+    if (!d.ok) { rowsEl.innerHTML = `<tr><td colspan="9" class="empty">Error: ${d.error}</td></tr>`; return; }
+    if (d.despatches.length === 0) {
+      rowsEl.innerHTML = '<tr><td colspan="9" class="empty"><h3>No despatches match</h3><p>Despatches are created from a Sales Order using the <strong>Create despatch</strong> button.</p></td></tr>';
+      return;
+    }
+    rowsEl.innerHTML = d.despatches.map(dn => `
+      <tr>
+        <td class="mono"><a href="/orders/despatch/detail?id=${dn.id}">${fmt(dn.despatch_number)}</a></td>
+        <td class="mono"><a href="/orders/sales-orders/detail?id=${dn.so_id}">${fmt(dn.so_number)}</a>${dn.customer_ref ? `<div style="color:var(--ink-dim);font-size:0.78rem;">${fmt(dn.customer_ref)}</div>` : ''}</td>
+        <td>${fmt(dn.customer_name)}</td>
+        <td>${fmt(dn.delivery_town)}</td>
+        <td>${fmt(dn.carrier)}</td>
+        <td><span class="pill pill-${dn.status.replace(/_/g,'-')}">${dn.status}</span></td>
+        <td>${dn.picker_name || dn.picker_email ? fmt(dn.picker_name || dn.picker_email) : '<span style="color:var(--ink-dim)">Unassigned</span>'}</td>
+        <td style="text-align:right">${dn.line_count}</td>
+        <td><a href="/orders/despatch/detail?id=${dn.id}" class="btn btn-ghost">View →</a></td>
+      </tr>
+    `).join('');
+  }
+
+  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 200); });
+  load();
 </script>
+
 </body>
 </html>

@@ -193,11 +193,66 @@
   function fillActions(so) {
     const buttons = [];
     if (so.status === 'draft' || so.status === 'on_hold') buttons.push(`<button type="button" class="btn btn-primary" data-act="confirm">Confirm order</button>`);
+    if (['confirmed', 'picking', 'part_despatched'].includes(so.status)) buttons.push(`<button type="button" class="btn btn-primary" data-act="create-despatch">🚚 Create despatch</button>`);
     if (so.status === 'draft' || so.status === 'confirmed') buttons.push(`<button type="button" class="btn btn-ghost" data-act="hold">Put on hold</button>`);
     if (so.status === 'on_hold') buttons.push(`<button type="button" class="btn btn-ghost" data-act="unhold">Take off hold</button>`);
     if (['draft', 'confirmed', 'on_hold'].includes(so.status)) buttons.push(`<button type="button" class="btn btn-danger" data-act="cancel">Cancel</button>`);
     if (so.status === 'draft' && so.lines.length === 0) buttons.push(`<button type="button" class="btn btn-danger" data-act="delete">Delete</button>`);
     actionsEl.innerHTML = buttons.join(' ');
+  }
+
+  function openCreateDespatchModal() {
+    const outstanding = currentSo.lines.filter(l => (l.quantity_ordered - l.quantity_despatched) > 0);
+    if (outstanding.length === 0) { alert('Nothing left to despatch on this order.'); return; }
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="modal-card" onclick="event.stopPropagation()">
+        <button type="button" class="x" data-close>×</button>
+        <h2 style="margin:0 0 4px;">Create despatch for ${currentSo.so_number}</h2>
+        <p style="margin:0 0 14px;color:var(--ink-soft);font-size:0.85rem;">Pick which lines and how many to ship. Picking + packing happens on the despatch screen.</p>
+        <div id="cd-lines"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+          <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+          <button type="button" class="btn btn-primary" id="cd-submit">Create despatch</button>
+        </div>
+      </div>
+    `;
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop || e.target.dataset.close !== undefined) backdrop.remove();
+    });
+    document.body.appendChild(backdrop);
+
+    backdrop.querySelector('#cd-lines').innerHTML = outstanding.map(l => {
+      const outQ = l.quantity_ordered - l.quantity_despatched;
+      return `
+        <div class="alloc-item" style="display:grid;grid-template-columns:1fr auto;gap:10px;padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;" data-sol="${l.id}">
+          <div>
+            <strong class="sn">${(l.sku||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</strong> · ${(l.description||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+            <div class="meta">ordered ${l.quantity_ordered} · already despatched ${l.quantity_despatched} · ${outQ} outstanding</div>
+          </div>
+          <input class="num qty-in" type="number" min="0" max="${outQ}" value="${outQ}" style="width:80px;">
+        </div>
+      `;
+    }).join('');
+
+    backdrop.querySelector('#cd-submit').addEventListener('click', async () => {
+      const lines = [];
+      backdrop.querySelectorAll('[data-sol]').forEach(row => {
+        const qty = parseInt(row.querySelector('.qty-in').value, 10);
+        if (qty && qty > 0) lines.push({ so_line_id: parseInt(row.dataset.sol, 10), qty_to_despatch: qty });
+      });
+      if (lines.length === 0) { alert('Enter a qty for at least one line.'); return; }
+      const r = await fetch('/api/despatches', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ so_id: currentSo.id, lines })
+      });
+      const d = await r.json();
+      if (!d.ok) { alert('Create failed: ' + d.error); return; }
+      backdrop.remove();
+      location.href = '/orders/despatch/detail?id=' + d.despatch_id;
+    });
   }
 
   function lineTotal(qty, price, disc) {
@@ -495,6 +550,10 @@
       const d = await r.json();
       if (!d.ok) { setStatus('Delete failed: ' + d.error, 'err'); return; }
       location.href = '/orders/sales-orders';
+      return;
+    }
+    if (act === 'create-despatch') {
+      openCreateDespatchModal();
       return;
     }
     const prompts = {

@@ -428,7 +428,56 @@ const MIGRATIONS = [
 
   // Track which goods-in receipt minted a serial
   `ALTER TABLE erp_product_serials ADD COLUMN IF NOT EXISTS goods_in_line_id INTEGER REFERENCES erp_goods_in_lines(id) ON DELETE SET NULL`,
-  `CREATE INDEX IF NOT EXISTS erp_serials_gil_idx ON erp_product_serials(goods_in_line_id)`
+  `CREATE INDEX IF NOT EXISTS erp_serials_gil_idx ON erp_product_serials(goods_in_line_id)`,
+
+  // ---------- Despatch (Phase 1 · Task #51) ----------
+  `CREATE TABLE IF NOT EXISTS erp_despatches (
+    id SERIAL PRIMARY KEY,
+    despatch_number TEXT UNIQUE NOT NULL,
+    so_id INTEGER NOT NULL REFERENCES erp_sales_orders(id),
+    warehouse_id INTEGER REFERENCES erp_warehouses(id),
+    status TEXT NOT NULL DEFAULT 'pending'
+      CHECK (status IN ('pending','picking','packed','despatched','cancelled')),
+    assigned_picker_id INTEGER REFERENCES erp_users(id),
+    picked_at TIMESTAMPTZ,
+    packed_at TIMESTAMPTZ,
+    despatched_at TIMESTAMPTZ,
+    cancelled_at TIMESTAMPTZ,
+    carrier TEXT,
+    tracking_number TEXT,
+    weight_kg NUMERIC(10,3),
+    number_of_packages INTEGER NOT NULL DEFAULT 1,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by INTEGER REFERENCES erp_users(id)
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_dn_so_idx ON erp_despatches(so_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_dn_status_idx ON erp_despatches(status)`,
+  `CREATE INDEX IF NOT EXISTS erp_dn_picker_idx ON erp_despatches(assigned_picker_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_dn_created_idx ON erp_despatches(created_at DESC)`,
+
+  `CREATE TABLE IF NOT EXISTS erp_despatch_lines (
+    id SERIAL PRIMARY KEY,
+    despatch_id INTEGER NOT NULL REFERENCES erp_despatches(id) ON DELETE CASCADE,
+    so_line_id INTEGER REFERENCES erp_sales_order_lines(id),
+    product_id INTEGER REFERENCES erp_products(id),
+    sku TEXT,
+    description TEXT,
+    qty_to_despatch INTEGER NOT NULL,
+    qty_picked INTEGER NOT NULL DEFAULT 0,
+    qty_despatched INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_dnl_despatch_idx ON erp_despatch_lines(despatch_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_dnl_so_line_idx ON erp_despatch_lines(so_line_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_dnl_product_idx ON erp_despatch_lines(product_id)`,
+
+  // Trace which despatch shipped a given serial
+  `ALTER TABLE erp_product_serials ADD COLUMN IF NOT EXISTS despatch_id INTEGER REFERENCES erp_despatches(id) ON DELETE SET NULL`,
+  `ALTER TABLE erp_product_serials ADD COLUMN IF NOT EXISTS despatch_line_id INTEGER REFERENCES erp_despatch_lines(id) ON DELETE SET NULL`,
+  `CREATE INDEX IF NOT EXISTS erp_serials_despatch_idx ON erp_product_serials(despatch_id)`
 ];
 
 export default async function handler(req, res) {
