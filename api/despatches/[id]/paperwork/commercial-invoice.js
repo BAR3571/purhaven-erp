@@ -9,6 +9,14 @@ function money(pence, currency = 'GBP') {
 }
 
 export default async function handler(req, res) {
+  try { return await impl(req, res); }
+  catch (err) {
+    console.error('commercial-invoice error:', err);
+    return res.status(500).json({ error: err.message || 'failed', stack: (err.stack || '').split('\n').slice(0, 3) });
+  }
+}
+
+async function impl(req, res) {
   const user = await requireUser(req, res);
   if (!user) return;
   if (req.method !== 'GET') {
