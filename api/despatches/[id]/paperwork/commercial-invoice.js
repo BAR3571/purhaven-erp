@@ -9,14 +9,6 @@ function money(pence, currency = 'GBP') {
 }
 
 export default async function handler(req, res) {
-  try { return await impl(req, res); }
-  catch (err) {
-    console.error('commercial-invoice error:', err);
-    return res.status(500).json({ error: err.message || 'failed', stack: (err.stack || '').split('\n').slice(0, 3) });
-  }
-}
-
-async function impl(req, res) {
   const user = await requireUser(req, res);
   if (!user) return;
   if (req.method !== 'GET') {
@@ -35,16 +27,18 @@ async function impl(req, res) {
   const enriched = lineIds.length === 0 ? [] : await sql`
     SELECT dnl.id AS dnl_id,
            dnl.sku, dnl.description, dnl.qty_despatched, dnl.qty_picked, dnl.qty_to_despatch,
-           sol.unit_price_pence, sol.discount_percent, sol.vat_rate_percent, sol.currency,
+           sol.unit_price_pence, sol.discount_percent, sol.vat_rate_percent,
+           so.currency AS so_currency,
            p.hs_code, p.country_of_origin, p.weight_g
     FROM erp_despatch_lines dnl
     LEFT JOIN erp_sales_order_lines sol ON sol.id = dnl.so_line_id
+    LEFT JOIN erp_sales_orders so ON so.id = sol.so_id
     LEFT JOIN erp_products p ON p.id = dnl.product_id
     WHERE dnl.despatch_id = ${id}
     ORDER BY dnl.id ASC
   `;
 
-  const currency = enriched[0]?.currency || 'GBP';
+  const currency = enriched[0]?.so_currency || 'GBP';
   let subtotal = 0;
   let vat = 0;
   let totalWeightG = 0;
