@@ -57,7 +57,7 @@ export default async function handler(req, res) {
           currency, notes, source, revolut_order_id, created_by
         ) VALUES (
           ${soNumber}, ${customerId}, 'draft', ${b.customer_ref || null},
-          ${b.order_date || null}, ${b.required_date || null},
+          COALESCE(${b.order_date || null}::date, CURRENT_DATE), ${b.required_date || null},
           ${defaultAddr?.id || null},
           ${b.ship_to_name || customer.name},
           ${defaultAddr?.line1 || null},
