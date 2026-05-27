@@ -134,12 +134,13 @@
     }).join('');
   }
 
-  // Quick despatch button — fetches SO lines and creates a despatch for the outstanding qty on each
+  // Quick pick-list button — creates the pick list, pops the picking-note PDF in a new tab,
+  // then takes the user to the despatch detail page to continue the flow
   rowsEl.addEventListener('click', async (e) => {
     const btn = e.target.closest('button[data-act="quick-despatch"]');
     if (!btn) return;
     const soid = parseInt(btn.dataset.soid, 10);
-    if (!confirm('Create a pick list for the outstanding qty on all lines of this SO?')) return;
+    if (!confirm('Create a pick list for the outstanding qty on all lines, and print the picking note now?')) return;
     btn.disabled = true;
     btn.textContent = 'Creating…';
     try {
@@ -154,6 +155,8 @@
         body: JSON.stringify({ so_id: soid, lines })
       }).then(r => r.json());
       if (!dn.ok) { alert('Create failed: ' + dn.error); return; }
+      // Pre-open the PDF in a new tab BEFORE navigating, so popup blockers see the click
+      window.open(`/api/despatches/${dn.despatch_id}/paperwork/picking-note`, '_blank');
       location.href = '/orders/despatch/detail?id=' + dn.despatch_id;
     } finally {
       btn.disabled = false;

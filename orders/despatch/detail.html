@@ -147,6 +147,9 @@
 
   function fillActions(dn) {
     const buttons = [];
+    if (['pending','picking','packed','despatched'].includes(dn.status)) {
+      buttons.push(`<a class="btn btn-ghost" href="/api/despatches/${dn.id}/paperwork/picking-note" target="_blank" rel="noopener">🖨️ Picking note PDF</a>`);
+    }
     if (dn.status === 'pending') buttons.push(`<button type="button" class="btn btn-primary" data-act="start-picking">▶ Start picking</button>`);
     if (dn.status === 'picking') buttons.push(`<button type="button" class="btn btn-primary" data-act="confirm-picking">✓ Confirm pick &amp; packaging</button>`);
     if (dn.status === 'packed') buttons.push(`<button type="button" class="btn btn-ghost" data-act="unpack">↶ Back to picking</button>`);
@@ -154,6 +157,33 @@
     if (['pending','picking','packed'].includes(dn.status)) buttons.push(`<button type="button" class="btn btn-danger" data-act="cancel">Cancel</button>`);
     if (dn.status === 'pending') buttons.push(`<button type="button" class="btn btn-danger" data-act="delete">Delete</button>`);
     actionsEl.innerHTML = buttons.join(' ');
+  }
+
+  function renderSerialPicker(l) {
+    const pool = l.serials_pool || [];
+    if (pool.length === 0) {
+      return '<div style="color:#92400e;font-size:0.78rem;">⚠ No in-stock serials at this warehouse</div>';
+    }
+    return `
+      <div class="serial-picker" style="max-height:140px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:6px 8px;background:var(--bg);">
+        ${pool.map(s => {
+          const preChecked = s.is_assigned_to_this_despatch_line || s.is_allocated_to_this_line;
+          const disabled = s.is_allocated_elsewhere;
+          const tagBits = [];
+          if (s.is_allocated_to_this_line) tagBits.push('<span class="alloc-chip serial" style="font-size:0.6rem;padding:1px 6px;">allocated</span>');
+          if (s.is_assigned_to_this_despatch_line) tagBits.push('<span class="alloc-chip po" style="font-size:0.6rem;padding:1px 6px;">on this pick</span>');
+          if (disabled) tagBits.push('<span style="color:var(--ink-dim);font-size:0.7rem;">on another SO</span>');
+          return `
+            <label style="display:flex;gap:6px;align-items:center;padding:3px 0;font-family:ui-monospace,Menlo,monospace;font-size:0.82rem;${disabled?'opacity:.5;':''}">
+              <input type="checkbox" class="serial-cb" value="${s.serial_number.replace(/"/g,'&quot;')}" ${preChecked?'checked':''} ${disabled?'disabled':''}>
+              <span>${fmt(s.serial_number)}</span>
+              ${tagBits.join(' ')}
+            </label>
+          `;
+        }).join('')}
+      </div>
+      <div style="margin-top:4px;font-size:0.72rem;color:var(--ink-dim);">Tick the units physically picked. ✓ pre-ticked = pre-allocated by sales.</div>
+    `;
   }
 
   function renderLines(dn) {
@@ -173,7 +203,7 @@
           <td style="text-align:right" style="color:${l.qty_despatched > 0 ? 'var(--green)' : 'var(--ink-dim)'};">${l.qty_despatched}</td>
           <td>
             ${editable && l.requires_serial
-              ? `<textarea class="serials-in" rows="3" placeholder="One serial per line">${(l.assigned_serials || []).map(s => s.serial_number).join('\n')}</textarea>`
+              ? renderSerialPicker(l)
               : (serialsList || '<span style="color:var(--ink-dim)">—</span>')}
           </td>
         </tr>
@@ -187,6 +217,16 @@
     const d = await r.json();
     if (!d.ok) { setStatus('Load failed: ' + d.error, 'err'); return; }
     currentDn = d.despatch;
+    // Pre-fetch serial pool for each serialised line when we're in picking state
+    if (currentDn.status === 'picking') {
+      await Promise.all(currentDn.lines.map(async (l) => {
+        if (l.requires_serial) {
+          const pr = await fetch(`/api/despatches/${id}/lines/${l.id}/serials-pool`);
+          const pd = await pr.json();
+          l.serials_pool = pd.ok ? pd.serials : [];
+        }
+      }));
+    }
     fillHeader(currentDn);
     fillActions(currentDn);
     renderLines(currentDn);
@@ -225,16 +265,13 @@
     }
 
     if (act === 'confirm-picking') {
-      // Collect qty_picked + serials from the lines table, plus packaging from the header form
+      // Collect qty_picked + serials (checkbox values) per line, plus packaging from the header form
       const lines = [];
       currentDn.lines.forEach(l => {
         const tr = linesBody.querySelector(`tr[data-dnl="${l.id}"]`);
         const qtyEl = tr.querySelector('.qty-picked-in');
-        const serialsEl = tr.querySelector('.serials-in');
         if (!qtyEl) return;
-        const serials = serialsEl
-          ? serialsEl.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
-          : [];
+        const serials = Array.from(tr.querySelectorAll('.serial-cb:checked')).map(cb => cb.value);
         lines.push({
           despatch_line_id: l.id,
           qty_picked: parseInt(qtyEl.value, 10),
