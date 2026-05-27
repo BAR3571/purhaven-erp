@@ -119,21 +119,21 @@ export default async function handler(req, res) {
     doc.y = cy;
   }
 
-  // Totals
+  // Totals — fixed grid, no relative y arithmetic
   doc.moveDown(0.5);
-  const totalsX = 380, totalsW = 168;
+  const baseY = doc.y;
+  const labelX = 380, valX = 470, valW = 78, rowH = 14;
   doc.fillColor(colors.INK).font('Helvetica').fontSize(10);
-  doc.text('Subtotal (ex VAT)', totalsX, doc.y, { width: totalsW - 80 });
-  doc.text(money(subtotal, currency), totalsX + totalsW - 80, doc.y - 12, { width: 80, align: 'right' });
-  doc.moveDown(0.2);
-  doc.text('VAT', totalsX, doc.y, { width: totalsW - 80 });
-  doc.text(money(vat, currency), totalsX + totalsW - 80, doc.y - 12, { width: 80, align: 'right' });
-  doc.moveDown(0.2);
-  doc.moveTo(totalsX, doc.y).lineTo(totalsX + totalsW, doc.y).strokeColor(colors.INK).stroke();
-  doc.moveDown(0.4);
+  doc.text('Subtotal (ex VAT)', labelX, baseY,           { width: 90, lineBreak: false });
+  doc.text(money(subtotal, currency), valX, baseY,       { width: valW, align: 'right', lineBreak: false });
+  doc.text('VAT',                labelX, baseY + rowH,   { width: 90, lineBreak: false });
+  doc.text(money(vat, currency), valX, baseY + rowH,     { width: valW, align: 'right', lineBreak: false });
+  doc.moveTo(labelX, baseY + 2 * rowH + 2).lineTo(548, baseY + 2 * rowH + 2).strokeColor(colors.INK).stroke();
   doc.font('Helvetica-Bold').fontSize(11);
-  doc.text('Total', totalsX, doc.y, { width: totalsW - 80 });
-  doc.text(money(total, currency), totalsX + totalsW - 80, doc.y - 13, { width: 80, align: 'right' });
+  doc.text('Total',              labelX, baseY + 2 * rowH + 6, { width: 90, lineBreak: false });
+  doc.text(money(total, currency), valX, baseY + 2 * rowH + 6, { width: valW, align: 'right', lineBreak: false });
+  doc.font('Helvetica').fontSize(10);
+  doc.y = baseY + 3 * rowH + 8;
 
   // Footer info
   doc.moveDown(1);
