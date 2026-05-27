@@ -204,19 +204,47 @@
     return Math.round(qty * price * (1 - disc / 100));
   }
 
+  function renderAllocChips(line) {
+    const serialChips = (line.allocated_serials || []).map(s =>
+      `<span class="alloc-chip serial" title="Serial allocation">
+         <span class="sn">${fmt(s.serial_number)}</span>
+         <button class="x" data-act="unalloc-serial" data-lid="${line.id}" data-sid="${s.id}" title="Unallocate">×</button>
+       </span>`
+    ).join('');
+    const poChips = (line.allocated_po_lines || []).map(a =>
+      `<span class="alloc-chip po" title="${fmt(a.supplier_name)}">
+         <a href="/orders/purchase-orders/detail?id=${a.po_id}" style="color:inherit;text-decoration:none;">${fmt(a.po_number)} ×${a.qty}</a>
+         <button class="x" data-act="unalloc-po" data-aid="${a.id}" title="Unallocate">×</button>
+       </span>`
+    ).join('');
+    return serialChips + poChips;
+  }
+
   function renderLines(so) {
     if (so.lines.length === 0) {
       linesBody.innerHTML = '<tr><td colspan="9" class="empty">No lines yet — click <strong>+ Add line</strong> to start.</td></tr>';
       return;
     }
     const editable = !['despatched','invoiced','complete','cancelled'].includes(so.status);
+    const allocatable = !['draft','cancelled'].includes(so.status) || so.status === 'draft'; // anything except cancelled
     linesBody.innerHTML = so.lines.map(l => {
       const lineSubtotal = lineTotal(l.quantity_ordered, l.unit_price_pence, Number(l.discount_percent));
+      const allocated = l.qty_allocated_total || 0;
+      const allocBadge = l.product_id
+        ? `<div style="margin-top:4px;font-size:0.78rem;color:${allocated >= l.quantity_ordered ? 'var(--green)' : 'var(--ink-dim)'};">
+             Allocated ${allocated}/${l.quantity_ordered}
+             <button type="button" class="btn btn-ghost" data-act="open-alloc" data-lid="${l.id}" style="padding:2px 8px;font-size:0.75rem;margin-left:4px;">Allocate…</button>
+           </div>
+           <div style="margin-top:4px;">${renderAllocChips(l)}</div>`
+        : '';
       return `
         <tr class="line-row" data-lid="${l.id}">
           <td class="mono">${l.line_no}</td>
           <td class="mono"><strong>${fmt(l.sku)}</strong></td>
-          <td><input type="text" data-f="description" value="${(l.description||'').replace(/"/g,'&quot;')}" ${editable ? '' : 'readonly'}></td>
+          <td>
+            <input type="text" data-f="description" value="${(l.description||'').replace(/"/g,'&quot;')}" ${editable ? '' : 'readonly'}>
+            ${allocBadge}
+          </td>
           <td><input class="num" type="number" data-f="quantity_ordered" min="1" value="${l.quantity_ordered}" ${editable ? '' : 'readonly'}></td>
           <td><input class="num" type="number" data-f="unit_price_pounds" step="0.01" min="0" value="${(l.unit_price_pence/100).toFixed(2)}" ${editable ? '' : 'readonly'}></td>
           <td><input class="num" type="number" data-f="discount_percent" min="0" max="100" step="0.5" value="${Number(l.discount_percent)}" ${editable ? '' : 'readonly'}></td>
@@ -226,6 +254,114 @@
         </tr>
       `;
     }).join('');
+  }
+
+  // ============ Allocation modal ============
+  function openAllocModal(lineId) {
+    const line = currentSo.lines.find(l => l.id === lineId);
+    if (!line) return;
+    if (!line.product_id) { alert('This line is not linked to a product, so allocation is not available.'); return; }
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="modal-card" onclick="event.stopPropagation()">
+        <button type="button" class="x" data-close>×</button>
+        <h2 style="margin:0 0 4px;">Allocate ${fmt(line.sku)} — line ${line.line_no}</h2>
+        <p style="margin:0;color:var(--ink-soft);font-size:0.85rem;">Ordered ${line.quantity_ordered}, currently allocated ${line.qty_allocated_total || 0}.</p>
+        <div class="alloc-tabs">
+          <button type="button" class="alloc-tab active" data-tab="serials">From stock (serials)</button>
+          <button type="button" class="alloc-tab" data-tab="po">From a purchase order</button>
+        </div>
+        <div class="alloc-list" id="alloc-list">Loading…</div>
+      </div>
+    `;
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop || e.target.dataset.close !== undefined) backdrop.remove();
+    });
+    document.body.appendChild(backdrop);
+
+    const listEl = backdrop.querySelector('#alloc-list');
+    const tabsEl = backdrop.querySelector('.alloc-tabs');
+    let activeTab = 'serials';
+
+    async function renderList() {
+      listEl.innerHTML = 'Loading…';
+      if (activeTab === 'serials') {
+        const r = await fetch(`/api/sales-orders/${id}/lines/${lineId}/available-serials`);
+        const d = await r.json();
+        if (!d.ok) { listEl.innerHTML = `<p class="err">${d.error}</p>`; return; }
+        if (d.serials.length === 0) {
+          listEl.innerHTML = '<p style="color:var(--ink-dim);">No in-stock serials available for this SKU.</p>';
+          return;
+        }
+        listEl.innerHTML = d.serials.map(s => `
+          <div class="alloc-item">
+            <div>
+              <span class="sn">${fmt(s.serial_number)}</span>
+              <div class="meta">in stock · ${fmt(s.warehouse_code || '')}</div>
+            </div>
+            <div></div>
+            <button type="button" class="btn btn-sky" data-allocate-serial="${s.id}">Allocate</button>
+          </div>
+        `).join('');
+      } else {
+        const r = await fetch(`/api/sales-orders/${id}/lines/${lineId}/available-po-lines`);
+        const d = await r.json();
+        if (!d.ok) { listEl.innerHTML = `<p class="err">${d.error}</p>`; return; }
+        if (d.po_lines.length === 0) {
+          listEl.innerHTML = '<p style="color:var(--ink-dim);">No open PO lines available for this SKU. Raise a Purchase Order first.</p>';
+          return;
+        }
+        listEl.innerHTML = d.po_lines.map(pol => `
+          <div class="alloc-item">
+            <div>
+              <strong>${fmt(pol.po_number)}</strong> · line ${pol.line_no}
+              <div class="meta">${fmt(pol.supplier_name)} · ${pol.po_status.replace(/_/g,' ')} · ${pol.qty_available_to_allocate} available${pol.expected_date ? ' · expected ' + new Date(pol.expected_date).toLocaleDateString('en-GB') : ''}</div>
+            </div>
+            <input type="number" min="1" max="${pol.qty_available_to_allocate}" value="${pol.qty_available_to_allocate}" data-po-qty="${pol.id}">
+            <button type="button" class="btn btn-sky" data-allocate-po="${pol.id}">Allocate</button>
+          </div>
+        `).join('');
+      }
+    }
+
+    tabsEl.addEventListener('click', (e) => {
+      const t = e.target.closest('.alloc-tab');
+      if (!t) return;
+      activeTab = t.dataset.tab;
+      tabsEl.querySelectorAll('.alloc-tab').forEach(x => x.classList.toggle('active', x === t));
+      renderList();
+    });
+
+    listEl.addEventListener('click', async (e) => {
+      const sBtn = e.target.closest('[data-allocate-serial]');
+      const pBtn = e.target.closest('[data-allocate-po]');
+      if (sBtn) {
+        const serialId = parseInt(sBtn.dataset.allocateSerial, 10);
+        const r = await fetch(`/api/sales-orders/${id}/lines/${lineId}/allocate-serial`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serial_id: serialId })
+        });
+        const d = await r.json();
+        if (!d.ok) { setStatus('Allocate failed: ' + d.error, 'err'); return; }
+        backdrop.remove();
+        load();
+      } else if (pBtn) {
+        const polId = parseInt(pBtn.dataset.allocatePo, 10);
+        const qtyInput = listEl.querySelector(`[data-po-qty="${polId}"]`);
+        const qty = parseInt(qtyInput.value, 10);
+        if (!qty || qty < 1) { setStatus('Enter a positive qty', 'err'); return; }
+        const r = await fetch(`/api/sales-orders/${id}/lines/${lineId}/allocate-po-line`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ po_line_id: polId, qty })
+        });
+        const d = await r.json();
+        if (!d.ok) { setStatus('Allocate failed: ' + d.error, 'err'); return; }
+        backdrop.remove();
+        load();
+      }
+    });
+
+    renderList();
   }
 
   let currentSo = null;
@@ -318,16 +454,34 @@
     }, 400);
   });
 
-  // Delete line
+  // Line actions: delete, open allocation modal, unallocate serial / PO
   linesBody.addEventListener('click', async (e) => {
-    const btn = e.target.closest('button[data-act="del-line"]');
-    if (!btn) return;
-    if (!confirm('Delete this line?')) return;
-    const lid = btn.dataset.lid;
-    const r = await fetch('/api/sales-orders/' + id + '/lines/' + lid, { method: 'DELETE' });
-    const d = await r.json();
-    if (!d.ok) { setStatus('Delete failed: ' + d.error, 'err'); return; }
-    load();
+    const delBtn = e.target.closest('button[data-act="del-line"]');
+    const allocBtn = e.target.closest('button[data-act="open-alloc"]');
+    const unallocSerial = e.target.closest('button[data-act="unalloc-serial"]');
+    const unallocPo = e.target.closest('button[data-act="unalloc-po"]');
+
+    if (delBtn) {
+      if (!confirm('Delete this line?')) return;
+      const r = await fetch('/api/sales-orders/' + id + '/lines/' + delBtn.dataset.lid, { method: 'DELETE' });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Delete failed: ' + d.error, 'err'); return; }
+      load();
+    } else if (allocBtn) {
+      openAllocModal(parseInt(allocBtn.dataset.lid, 10));
+    } else if (unallocSerial) {
+      const lid = unallocSerial.dataset.lid;
+      const sid = unallocSerial.dataset.sid;
+      const r = await fetch(`/api/sales-orders/${id}/lines/${lid}/allocate-serial?serial_id=${sid}`, { method: 'DELETE' });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Unalloc failed: ' + d.error, 'err'); return; }
+      load();
+    } else if (unallocPo) {
+      const r = await fetch('/api/so-po-allocations/' + unallocPo.dataset.aid, { method: 'DELETE' });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Unalloc failed: ' + d.error, 'err'); return; }
+      load();
+    }
   });
 
   // Status actions + delete-SO

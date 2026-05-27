@@ -443,6 +443,92 @@ table.data .mono { font-family: ui-monospace, Menlo, monospace; font-size: 0.85e
 .pill-invoiced  { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
 .pill-complete  { background: #d1fae5; color: #065f46; border-color: #34d399; }
 
+/* ============ MODAL ============ */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(10,31,46,0.45);
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 60px 16px;
+  overflow-y: auto;
+}
+.modal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 720px;
+  box-shadow: var(--shadow);
+  padding: 22px 24px;
+}
+.modal-card .x {
+  float: right;
+  background: transparent;
+  border: none;
+  color: var(--ink-dim);
+  font-size: 1.4rem;
+  cursor: pointer;
+  line-height: 1;
+}
+.modal-card .x:hover { color: var(--ink); }
+
+.alloc-tabs { display: flex; gap: 4px; margin: 8px 0 14px; border-bottom: 1px solid var(--border); }
+.alloc-tab {
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  font-family: inherit;
+}
+.alloc-tab.active { color: var(--sky-deep); border-bottom-color: var(--sky-deep); }
+.alloc-tab:hover { color: var(--ink); }
+
+.alloc-list { max-height: 360px; overflow-y: auto; }
+.alloc-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 0.9rem;
+}
+.alloc-item:last-child { border-bottom: none; }
+.alloc-item .sn { font-family: ui-monospace, Menlo, monospace; font-weight: 600; }
+.alloc-item .meta { color: var(--ink-soft); font-size: 0.78rem; }
+.alloc-item input[type=number] { width: 70px; text-align: right; }
+
+/* ============ ALLOCATION CHIPS (inline on lines) ============ */
+.alloc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  margin: 2px 4px 2px 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+}
+.alloc-chip.serial { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
+.alloc-chip.po     { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+.alloc-chip .x {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0 0 0 4px;
+  opacity: 0.6;
+}
+.alloc-chip .x:hover { opacity: 1; }
+
 /* ============ FORMS ============ */
 .field { margin-bottom: 14px; }
 .field label {

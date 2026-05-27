@@ -93,7 +93,7 @@
         <tr>
           <th style="width:32px">#</th>
           <th>SKU</th>
-          <th>Description</th>
+          <th>Description / allocated to</th>
           <th style="text-align:right;width:80px">Qty</th>
           <th style="text-align:right;width:90px">Received</th>
           <th style="text-align:right;width:120px">Unit cost (£)</th>
@@ -177,6 +177,21 @@
     return Math.round(qty * cost);
   }
 
+  function renderAllocations(allocs) {
+    if (!allocs || allocs.length === 0) {
+      return '<div style="margin-top:4px;color:var(--ink-dim);font-size:0.78rem;">Unallocated</div>';
+    }
+    const chips = allocs.map(a => `
+      <span class="alloc-chip">
+        <a href="/orders/sales-orders/detail?id=${a.so_id}" style="color:inherit;text-decoration:none;font-weight:600;">${fmt(a.so_number)}</a>
+        · <a href="/customers/detail?id=${a.customer_id}" style="color:inherit;text-decoration:none;">${fmt(a.customer_name)}</a>
+        · ×${a.qty}
+        <button class="x" data-act="unalloc-po" data-aid="${a.id}" title="Remove allocation">×</button>
+      </span>
+    `).join('');
+    return `<div style="margin-top:6px;">${chips}</div>`;
+  }
+
   function renderLines(po) {
     if (po.lines.length === 0) {
       linesBody.innerHTML = '<tr><td colspan="9" class="empty">No lines yet — click <strong>+ Add line</strong> to start.</td></tr>';
@@ -185,11 +200,19 @@
     const editable = !['received', 'closed', 'cancelled'].includes(po.status);
     linesBody.innerHTML = po.lines.map(l => {
       const lineSub = lineTotalPence(l.quantity_ordered, l.unit_cost_pence);
+      const allocated = Number(l.qty_allocated_to_sos || 0);
+      const allocBadge = allocated > 0
+        ? `<div style="margin-top:4px;font-size:0.78rem;color:var(--sky-deep);">Allocated to SOs: ${allocated} of ${l.quantity_ordered}</div>`
+        : '';
       return `
         <tr class="line-row" data-lid="${l.id}">
           <td class="mono">${l.line_no}</td>
           <td class="mono"><strong>${fmt(l.sku)}</strong></td>
-          <td><input type="text" data-f="description" value="${(l.description||'').replace(/"/g,'&quot;')}" ${editable ? '' : 'readonly'}></td>
+          <td>
+            <input type="text" data-f="description" value="${(l.description||'').replace(/"/g,'&quot;')}" ${editable ? '' : 'readonly'}>
+            ${allocBadge}
+            ${renderAllocations(l.allocated_so_lines)}
+          </td>
           <td><input class="num" type="number" data-f="quantity_ordered" min="1" value="${l.quantity_ordered}" ${editable ? '' : 'readonly'}></td>
           <td style="text-align:right;color:${l.quantity_received > 0 ? 'var(--green)' : 'var(--ink-dim)'};">${l.quantity_received}</td>
           <td><input class="num" type="number" data-f="unit_cost_pounds" step="0.01" min="0" value="${(l.unit_cost_pence/100).toFixed(2)}" ${editable ? '' : 'readonly'}></td>
@@ -281,14 +304,22 @@
   });
 
   linesBody.addEventListener('click', async (e) => {
-    const btn = e.target.closest('button[data-act="del-line"]');
-    if (!btn) return;
-    if (!confirm('Delete this line?')) return;
-    const lid = btn.dataset.lid;
-    const r = await fetch('/api/purchase-orders/' + id + '/lines/' + lid, { method: 'DELETE' });
-    const d = await r.json();
-    if (!d.ok) { setStatus('Delete failed: ' + d.error, 'err'); return; }
-    load();
+    const delBtn = e.target.closest('button[data-act="del-line"]');
+    const unallocBtn = e.target.closest('button[data-act="unalloc-po"]');
+    if (delBtn) {
+      if (!confirm('Delete this line?')) return;
+      const lid = delBtn.dataset.lid;
+      const r = await fetch('/api/purchase-orders/' + id + '/lines/' + lid, { method: 'DELETE' });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Delete failed: ' + d.error, 'err'); return; }
+      load();
+    } else if (unallocBtn) {
+      if (!confirm('Remove this allocation? The SO line will become unallocated.')) return;
+      const r = await fetch('/api/so-po-allocations/' + unallocBtn.dataset.aid, { method: 'DELETE' });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Unalloc failed: ' + d.error, 'err'); return; }
+      load();
+    }
   });
 
   actionsEl.addEventListener('click', async (e) => {

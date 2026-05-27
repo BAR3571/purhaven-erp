@@ -368,7 +368,25 @@ const MIGRATIONS = [
   )`,
 
   `CREATE INDEX IF NOT EXISTS erp_pol_po_idx ON erp_purchase_order_lines(po_id)`,
-  `CREATE INDEX IF NOT EXISTS erp_pol_product_idx ON erp_purchase_order_lines(product_id)`
+  `CREATE INDEX IF NOT EXISTS erp_pol_product_idx ON erp_purchase_order_lines(product_id)`,
+
+  // ---------- SO ↔ PO allocations (Task #60) ----------
+  // Serial → SO line: a specific serialised unit reserved for a sales order line.
+  `ALTER TABLE erp_product_serials ADD COLUMN IF NOT EXISTS allocated_to_so_line_id INTEGER REFERENCES erp_sales_order_lines(id) ON DELETE SET NULL`,
+  `CREATE INDEX IF NOT EXISTS erp_serials_alloc_so_idx ON erp_product_serials(allocated_to_so_line_id)`,
+
+  // PO line → SO line: a qty of incoming stock reserved against a sales order line.
+  `CREATE TABLE IF NOT EXISTS erp_so_po_allocations (
+    id SERIAL PRIMARY KEY,
+    so_line_id INTEGER NOT NULL REFERENCES erp_sales_order_lines(id) ON DELETE CASCADE,
+    po_line_id INTEGER NOT NULL REFERENCES erp_purchase_order_lines(id) ON DELETE CASCADE,
+    qty INTEGER NOT NULL CHECK (qty > 0),
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by INTEGER REFERENCES erp_users(id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS erp_so_po_so_line_idx ON erp_so_po_allocations(so_line_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_so_po_po_line_idx ON erp_so_po_allocations(po_line_id)`
 ];
 
 export default async function handler(req, res) {
