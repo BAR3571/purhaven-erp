@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="PurHaven">
+  <path d="M 14 60 C 6 30, 30 6, 56 10 C 76 13, 90 27, 94 46"
+        stroke="#dcc8a8" stroke-width="13" stroke-linecap="round" fill="none"/>
+  <path d="M 88 36 C 98 58, 82 92, 54 92 C 32 92, 14 78, 10 56"
+        stroke="#2c6e85" stroke-width="13" stroke-linecap="round" fill="none"/>
+</svg>

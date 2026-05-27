@@ -74,10 +74,8 @@ button, input, select, textarea {
   gap: 8px;
 }
 .topbar .brand .dot {
-  width: 18px; height: 18px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, #7dd3fc, var(--sky-deep));
-  box-shadow: 0 0 12px rgba(56,189,248,0.5);
+  width: 26px; height: 26px;
+  background: url('/assets/logo-mark.svg') center/contain no-repeat;
 }
 
 .topbar nav {
@@ -596,10 +594,8 @@ table.data .mono { font-family: ui-monospace, Menlo, monospace; font-size: 0.85e
   margin-bottom: 4px;
 }
 .login-card .brand .dot {
-  width: 22px; height: 22px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, #7dd3fc, var(--sky-deep));
-  box-shadow: 0 0 16px rgba(56,189,248,0.5);
+  width: 32px; height: 32px;
+  background: url('/assets/logo-mark.svg') center/contain no-repeat;
 }
 .login-card .tagline {
   font-family: 'Fraunces', serif;
