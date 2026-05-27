@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suppliers · Purhaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body data-page="suppliers">
+
+<div class="page-header">
+  <h1>🏷️ Suppliers</h1>
+  <div class="actions">
+    <a href="/suppliers/detail?id=new" class="btn btn-primary">+ New Supplier</a>
+  </div>
+</div>
+
+<div class="search-row">
+  <input type="search" id="q" placeholder="Search name, account code, VAT number…">
+  <label style="display:flex;align-items:center;gap:6px;color:var(--ink-soft);font-size:0.85rem;">
+    <input type="checkbox" id="include-inactive"> Show inactive
+  </label>
+</div>
+
+<div class="card" style="padding: 0;">
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Account #</th>
+          <th>Name</th>
+          <th>VAT #</th>
+          <th>Currency</th>
+          <th>Terms</th>
+          <th style="text-align:right">Lead time</th>
+          <th style="text-align:right">Contacts</th>
+          <th style="text-align:right">Addresses</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="rows">
+        <tr><td colspan="10" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script type="module">
+  import { mountShell, fmt } from '/app.js';
+  await mountShell();
+
+  const rowsEl = document.getElementById('rows');
+  const q = document.getElementById('q');
+  const incInactive = document.getElementById('include-inactive');
+  let timer;
+
+  async function load() {
+    const params = new URLSearchParams();
+    if (q.value.trim()) params.set('q', q.value.trim());
+    if (incInactive.checked) params.set('includeInactive', '1');
+    rowsEl.innerHTML = '<tr><td colspan="10" class="empty">Loading…</td></tr>';
+    const r = await fetch('/api/suppliers?' + params.toString());
+    const d = await r.json();
+    if (!d.ok) { rowsEl.innerHTML = `<tr><td colspan="10" class="empty">Error: ${d.error}</td></tr>`; return; }
+    if (d.suppliers.length === 0) {
+      rowsEl.innerHTML = '<tr><td colspan="10" class="empty"><h3>No suppliers yet</h3><p>Click <strong>+ New Supplier</strong> to add the first one.</p></td></tr>';
+      return;
+    }
+    rowsEl.innerHTML = d.suppliers.map(s => `
+      <tr>
+        <td class="mono"><a href="/suppliers/detail?id=${s.id}">${fmt(s.account_code)}</a></td>
+        <td><a href="/suppliers/detail?id=${s.id}"><strong>${fmt(s.name)}</strong></a></td>
+        <td>${fmt(s.vat_number)}</td>
+        <td>${fmt(s.currency)}</td>
+        <td>${fmt(s.payment_terms)}</td>
+        <td style="text-align:right">${s.lead_time_days != null ? s.lead_time_days + ' d' : '—'}</td>
+        <td style="text-align:right">${s.contact_count}</td>
+        <td style="text-align:right">${s.address_count}</td>
+        <td>${s.active ? '<span class="pill pill-despatched">Active</span>' : '<span class="pill pill-cancelled">Inactive</span>'}</td>
+        <td><a href="/suppliers/detail?id=${s.id}" class="btn btn-ghost">Open →</a></td>
+      </tr>
+    `).join('');
+  }
+
+  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 200); });
+  incInactive.addEventListener('change', load);
+  load();
+</script>
+
+</body>
+</html>

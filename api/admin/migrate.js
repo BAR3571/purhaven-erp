@@ -89,7 +89,58 @@ const MIGRATIONS = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
 
-  `CREATE INDEX IF NOT EXISTS erp_customer_addresses_cust_idx ON erp_customer_addresses(customer_id)`
+  `CREATE INDEX IF NOT EXISTS erp_customer_addresses_cust_idx ON erp_customer_addresses(customer_id)`,
+
+  // ---------- Suppliers (Phase 1 · Task #46) ----------
+  `CREATE TABLE IF NOT EXISTS erp_suppliers (
+    id SERIAL PRIMARY KEY,
+    account_code TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    vat_number TEXT,
+    eori_number TEXT,
+    currency TEXT NOT NULL DEFAULT 'GBP',
+    payment_terms TEXT,
+    lead_time_days INTEGER,
+    notes TEXT,
+    xero_contact_id TEXT,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by INTEGER REFERENCES erp_users(id)
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_suppliers_active_idx ON erp_suppliers(active)`,
+  `CREATE INDEX IF NOT EXISTS erp_suppliers_name_idx ON erp_suppliers(LOWER(name))`,
+
+  `CREATE TABLE IF NOT EXISTS erp_supplier_contacts (
+    id SERIAL PRIMARY KEY,
+    supplier_id INTEGER NOT NULL REFERENCES erp_suppliers(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    position TEXT,
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_supplier_contacts_supp_idx ON erp_supplier_contacts(supplier_id)`,
+
+  `CREATE TABLE IF NOT EXISTS erp_supplier_addresses (
+    id SERIAL PRIMARY KEY,
+    supplier_id INTEGER NOT NULL REFERENCES erp_suppliers(id) ON DELETE CASCADE,
+    label TEXT,
+    type TEXT NOT NULL DEFAULT 'both' CHECK (type IN ('billing','shipping','both')),
+    line1 TEXT,
+    line2 TEXT,
+    city TEXT,
+    county TEXT,
+    postcode TEXT,
+    country TEXT NOT NULL DEFAULT 'GB',
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_supplier_addresses_supp_idx ON erp_supplier_addresses(supplier_id)`
 ];
 
 export default async function handler(req, res) {
