@@ -11,16 +11,116 @@
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body data-page="orders">
+
 <div id="tabs-mount"></div>
-<div class="page-header"><h1>📋 Purchase Orders</h1></div>
-<div class="card accent-orange">
-  <h2 style="margin-top:0">Coming next</h2>
-  <p style="color:var(--ink-soft);margin:0;">Task #49. Will mirror the Sales Orders shape — PO header + lines + status flow (Draft → Released → Part Received → Received → Closed), supplier select, email-to-supplier action, and link from a Sales Order line.</p>
+
+<div class="page-header">
+  <h1>📋 Purchase Orders</h1>
+  <div class="actions">
+    <button type="button" class="btn btn-primary" id="new-po-btn">+ New Purchase Order</button>
+  </div>
 </div>
+
+<div class="search-row">
+  <input type="search" id="q" placeholder="Search PO#, supplier, ref…">
+  <select id="status">
+    <option value="">All statuses</option>
+    <option value="draft">Draft</option>
+    <option value="released">Released</option>
+    <option value="part_received">Part received</option>
+    <option value="received">Received</option>
+    <option value="closed">Closed</option>
+    <option value="cancelled">Cancelled</option>
+  </select>
+</div>
+
+<div class="card" style="padding: 0;">
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>PO #</th>
+          <th>Supplier</th>
+          <th>Supplier ref</th>
+          <th>Order date</th>
+          <th>Expected</th>
+          <th>Status</th>
+          <th style="text-align:right">Lines</th>
+          <th style="text-align:right">Total</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="rows">
+        <tr><td colspan="9" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <script type="module">
-  import { mountShell, renderOrdersTabs } from '/app.js';
+  import { mountShell, renderOrdersTabs, fmt, money, dateOnly } from '/app.js';
   await mountShell();
   document.getElementById('tabs-mount').innerHTML = `<div class="orders-tabs">${renderOrdersTabs('purchase-orders')}</div>`;
+
+  const rowsEl = document.getElementById('rows');
+  const q = document.getElementById('q');
+  const statusSel = document.getElementById('status');
+  let timer;
+
+  async function load() {
+    const params = new URLSearchParams();
+    if (q.value.trim()) params.set('q', q.value.trim());
+    if (statusSel.value) params.set('status', statusSel.value);
+    rowsEl.innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
+    const r = await fetch('/api/purchase-orders?' + params.toString());
+    const d = await r.json();
+    if (!d.ok) { rowsEl.innerHTML = `<tr><td colspan="9" class="empty">Error: ${d.error}</td></tr>`; return; }
+    if (d.purchase_orders.length === 0) {
+      rowsEl.innerHTML = '<tr><td colspan="9" class="empty"><h3>No purchase orders yet</h3><p>Click <strong>+ New Purchase Order</strong> to create one.</p></td></tr>';
+      return;
+    }
+    rowsEl.innerHTML = d.purchase_orders.map(po => `
+      <tr>
+        <td class="mono"><a href="/orders/purchase-orders/detail?id=${po.id}">${fmt(po.po_number)}</a></td>
+        <td><a href="/suppliers/detail?id=${po.supplier_id}">${fmt(po.supplier_name)}</a><div style="color:var(--ink-dim);font-size:0.78rem;">${fmt(po.supplier_code)}</div></td>
+        <td>${fmt(po.supplier_ref)}</td>
+        <td>${dateOnly(po.order_date)}</td>
+        <td>${po.expected_date ? dateOnly(po.expected_date) : '—'}</td>
+        <td><span class="pill pill-${po.status.replace(/_/g,'-')}">${po.status.replace(/_/g,' ')}</span></td>
+        <td style="text-align:right">${po.line_count}</td>
+        <td style="text-align:right"><strong>${money(po.total_pence, po.currency)}</strong></td>
+        <td><a href="/orders/purchase-orders/detail?id=${po.id}" class="btn btn-ghost">Open →</a></td>
+      </tr>
+    `).join('');
+  }
+
+  document.getElementById('new-po-btn').addEventListener('click', async () => {
+    const supplierQuery = prompt('Supplier name or account code to raise a PO with?');
+    if (!supplierQuery) return;
+    const r = await fetch('/api/suppliers?q=' + encodeURIComponent(supplierQuery));
+    const d = await r.json();
+    if (!d.ok || d.suppliers.length === 0) { alert('No supplier matched.'); return; }
+    let target = d.suppliers[0];
+    if (d.suppliers.length > 1) {
+      const list = d.suppliers.map((s, i) => `${i + 1}. ${s.name} (${s.account_code})`).join('\n');
+      const choice = prompt(`Pick a supplier:\n${list}\n\nEnter number:`);
+      const idx = parseInt(choice, 10) - 1;
+      if (!d.suppliers[idx]) return;
+      target = d.suppliers[idx];
+    }
+    const create = await fetch('/api/purchase-orders', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ supplier_id: target.id })
+    });
+    const cd = await create.json();
+    if (!cd.ok) { alert('Failed: ' + cd.error); return; }
+    window.location.href = '/orders/purchase-orders/detail?id=' + cd.purchase_order.id;
+  });
+
+  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 200); });
+  statusSel.addEventListener('change', load);
+  load();
 </script>
+
 </body>
 </html>

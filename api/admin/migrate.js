@@ -322,7 +322,53 @@ const MIGRATIONS = [
   // ---------- Website import (Task #59): email + phone on customer for matching ----------
   `ALTER TABLE erp_customers ADD COLUMN IF NOT EXISTS email TEXT`,
   `ALTER TABLE erp_customers ADD COLUMN IF NOT EXISTS phone TEXT`,
-  `CREATE INDEX IF NOT EXISTS erp_customers_email_idx ON erp_customers(LOWER(email))`
+  `CREATE INDEX IF NOT EXISTS erp_customers_email_idx ON erp_customers(LOWER(email))`,
+
+  // ---------- Purchase Orders (Phase 1 · Task #49) ----------
+  `CREATE TABLE IF NOT EXISTS erp_purchase_orders (
+    id SERIAL PRIMARY KEY,
+    po_number TEXT UNIQUE NOT NULL,
+    supplier_id INTEGER NOT NULL REFERENCES erp_suppliers(id),
+    status TEXT NOT NULL DEFAULT 'draft'
+      CHECK (status IN ('draft','released','part_received','received','closed','cancelled')),
+    supplier_ref TEXT,
+    order_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    expected_date DATE,
+    deliver_to_warehouse_id INTEGER REFERENCES erp_warehouses(id),
+    currency TEXT NOT NULL DEFAULT 'GBP',
+    subtotal_pence INTEGER NOT NULL DEFAULT 0,
+    vat_pence INTEGER NOT NULL DEFAULT 0,
+    total_pence INTEGER NOT NULL DEFAULT 0,
+    notes TEXT,
+    xero_bill_id TEXT,
+    released_at TIMESTAMPTZ,
+    closed_at TIMESTAMPTZ,
+    cancelled_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by INTEGER REFERENCES erp_users(id)
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_po_supplier_idx ON erp_purchase_orders(supplier_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_po_status_idx ON erp_purchase_orders(status)`,
+  `CREATE INDEX IF NOT EXISTS erp_po_order_date_idx ON erp_purchase_orders(order_date DESC)`,
+
+  `CREATE TABLE IF NOT EXISTS erp_purchase_order_lines (
+    id SERIAL PRIMARY KEY,
+    po_id INTEGER NOT NULL REFERENCES erp_purchase_orders(id) ON DELETE CASCADE,
+    line_no INTEGER NOT NULL,
+    product_id INTEGER REFERENCES erp_products(id),
+    sku TEXT,
+    description TEXT NOT NULL,
+    quantity_ordered INTEGER NOT NULL DEFAULT 1,
+    quantity_received INTEGER NOT NULL DEFAULT 0,
+    unit_cost_pence INTEGER NOT NULL DEFAULT 0,
+    vat_rate_percent INTEGER NOT NULL DEFAULT 20,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_pol_po_idx ON erp_purchase_order_lines(po_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_pol_product_idx ON erp_purchase_order_lines(product_id)`
 ];
 
 export default async function handler(req, res) {

@@ -435,6 +435,13 @@ table.data .mono { font-family: ui-monospace, Menlo, monospace; font-size: 0.85e
 .pill-replaced  { background: #e2e8f0; color: #475569; border-color: #cbd5e1; }
 .pill-returned  { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
 .pill-scrapped  { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+.pill-released  { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+.pill-part-received { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+.pill-received  { background: #d1fae5; color: #065f46; border-color: #34d399; }
+.pill-closed    { background: #e2e8f0; color: #475569; border-color: #cbd5e1; }
+.pill-part-despatched { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+.pill-invoiced  { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+.pill-complete  { background: #d1fae5; color: #065f46; border-color: #34d399; }
 
 /* ============ FORMS ============ */
 .field { margin-bottom: 14px; }

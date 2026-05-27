@@ -84,6 +84,25 @@ export default async function handler(req, res) {
       WHERE so.so_number ILIKE ${like}
          OR so.customer_ref ILIKE ${like}
          OR c.name ILIKE ${like}
+
+      UNION ALL
+
+      SELECT
+        'purchase_order' AS type,
+        po.id::text      AS id,
+        s.name           AS label,
+        po.po_number     AS sub,
+        '/orders/purchase-orders/detail?id=' || po.id AS href,
+        CASE
+          WHEN po.po_number ILIKE ${like} THEN 1
+          WHEN po.supplier_ref ILIKE ${like} THEN 2
+          ELSE 3
+        END AS rank
+      FROM erp_purchase_orders po
+      JOIN erp_suppliers s ON s.id = po.supplier_id
+      WHERE po.po_number ILIKE ${like}
+         OR po.supplier_ref ILIKE ${like}
+         OR s.name ILIKE ${like}
     ) hits
     ORDER BY rank ASC, label ASC
     LIMIT ${limit}

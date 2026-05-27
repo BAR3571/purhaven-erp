@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Purchase Order · Purhaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  .po-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 1000px) { .po-grid { grid-template-columns: 1fr; } }
+  .totals-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 6px 0; }
+  .totals-row.grand { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 12px; font-weight: 700; font-size: 1.1rem; }
+  .err { color: #991b1b; }
+  .ok { color: #065f46; }
+  .line-row td input { background: transparent; border: 1px solid transparent; padding: 4px 6px; }
+  .line-row td input:hover, .line-row td input:focus { border-color: var(--border); background: var(--bg); }
+  .line-row td input.num { text-align: right; }
+</style>
+</head>
+<body data-page="orders">
+
+<div id="tabs-mount"></div>
+
+<div id="page-header" class="page-header">
+  <div>
+    <a href="/orders/purchase-orders" style="color:var(--ink-dim);font-size:0.85rem;">← Purchase Orders</a>
+    <h1 id="title" style="margin:4px 0 0;">Purchase Order</h1>
+    <div id="subtitle" style="color:var(--ink-soft);margin-top:4px;font-size:0.9rem;"></div>
+  </div>
+  <div class="actions" id="actions"></div>
+</div>
+
+<div id="status-msg" style="margin-bottom:12px;"></div>
+
+<div class="po-grid">
+  <div class="card accent-sky">
+    <h2 style="margin-top:0">Order details</h2>
+    <form id="po-form">
+      <div class="field-row">
+        <div class="field">
+          <label for="f-supplier-ref">Supplier reference (their PO/quote)</label>
+          <input type="text" id="f-supplier-ref">
+        </div>
+        <div class="field">
+          <label for="f-expected-date">Expected by</label>
+          <input type="date" id="f-expected-date">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="f-order-date">Order date</label>
+          <input type="date" id="f-order-date">
+        </div>
+        <div class="field">
+          <label for="f-currency">Currency</label>
+          <select id="f-currency">
+            <option value="GBP">GBP</option>
+            <option value="EUR">EUR</option>
+            <option value="USD">USD</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="f-notes">Notes</label>
+        <textarea id="f-notes" rows="2"></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary" id="save-btn">Save header</button>
+    </form>
+  </div>
+
+  <div class="card accent-orange">
+    <h2 style="margin-top:0">Deliver to</h2>
+    <div class="field">
+      <label for="f-warehouse">Warehouse</label>
+      <select id="f-warehouse"></select>
+    </div>
+    <p style="color:var(--ink-soft);font-size:0.85rem;margin:0;">Stock arrives here when this PO is received via the Goods In module.</p>
+  </div>
+</div>
+
+<div class="card accent-purple" id="lines-card">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+    <h2 style="margin:0;">Lines</h2>
+    <button type="button" class="btn btn-sky" id="add-line-btn">+ Add line</button>
+  </div>
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th style="width:32px">#</th>
+          <th>SKU</th>
+          <th>Description</th>
+          <th style="text-align:right;width:80px">Qty</th>
+          <th style="text-align:right;width:90px">Received</th>
+          <th style="text-align:right;width:120px">Unit cost (£)</th>
+          <th style="text-align:right;width:80px">VAT %</th>
+          <th style="text-align:right;width:120px">Line total</th>
+          <th style="width:40px"></th>
+        </tr>
+      </thead>
+      <tbody id="lines-body">
+        <tr><td colspan="9" class="empty">No lines yet.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 280px;gap:10px;margin-top:14px;">
+    <div></div>
+    <div>
+      <div class="totals-row"><span>Subtotal (ex VAT)</span><strong id="t-subtotal">£0.00</strong></div>
+      <div class="totals-row"><span>VAT</span><strong id="t-vat">£0.00</strong></div>
+      <div class="totals-row grand"><span>Total</span><strong id="t-total">£0.00</strong></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { mountShell, renderOrdersTabs, fmt, money, dateOnly } from '/app.js';
+  await mountShell();
+  document.getElementById('tabs-mount').innerHTML = `<div class="orders-tabs">${renderOrdersTabs('purchase-orders')}</div>`;
+
+  const params = new URLSearchParams(window.location.search);
+  const id = parseInt(params.get('id'), 10);
+  if (!id) { alert('No order id'); location.href = '/orders/purchase-orders'; }
+
+  const titleEl = document.getElementById('title');
+  const subtitleEl = document.getElementById('subtitle');
+  const statusEl = document.getElementById('status-msg');
+  const actionsEl = document.getElementById('actions');
+  const linesBody = document.getElementById('lines-body');
+  const warehouseSel = document.getElementById('f-warehouse');
+
+  function setStatus(msg, cls) {
+    statusEl.innerHTML = msg
+      ? `<div class="card accent-${cls === 'err' ? 'pink' : 'green'}" style="padding:10px 14px;"><span class="${cls}">${msg}</span></div>`
+      : '';
+    if (msg) setTimeout(() => { statusEl.innerHTML = ''; }, 4000);
+  }
+
+  async function preload() {
+    const r = await fetch('/api/warehouses');
+    const d = await r.json();
+    if (d.ok) warehouseSel.innerHTML = d.warehouses.map(w => `<option value="${w.id}">${w.code} — ${w.name}</option>`).join('');
+  }
+
+  function fillHeader(po) {
+    titleEl.textContent = `${po.po_number} · ${po.supplier_name}`;
+    subtitleEl.textContent = `${po.status.replace(/_/g, ' ')} · order ${dateOnly(po.order_date)}` +
+                             (po.expected_date ? ` · expected ${dateOnly(po.expected_date)}` : '');
+    document.getElementById('f-supplier-ref').value = po.supplier_ref || '';
+    document.getElementById('f-expected-date').value = po.expected_date ? po.expected_date.slice(0,10) : '';
+    document.getElementById('f-order-date').value    = po.order_date ? po.order_date.slice(0,10) : '';
+    document.getElementById('f-currency').value      = po.currency || 'GBP';
+    document.getElementById('f-notes').value         = po.notes || '';
+    if (po.deliver_to_warehouse_id) warehouseSel.value = po.deliver_to_warehouse_id;
+  }
+
+  function fillTotals(po) {
+    document.getElementById('t-subtotal').textContent = money(po.subtotal_pence, po.currency);
+    document.getElementById('t-vat').textContent      = money(po.vat_pence, po.currency);
+    document.getElementById('t-total').textContent    = money(po.total_pence, po.currency);
+  }
+
+  function fillActions(po) {
+    const buttons = [];
+    if (po.status === 'draft') buttons.push(`<button type="button" class="btn btn-primary" data-act="release">Release to supplier</button>`);
+    if (['draft', 'released', 'part_received'].includes(po.status)) buttons.push(`<button type="button" class="btn btn-danger" data-act="cancel">Cancel</button>`);
+    if (['part_received', 'received'].includes(po.status)) buttons.push(`<button type="button" class="btn btn-ghost" data-act="close">Close</button>`);
+    if (po.status === 'draft' && po.lines.length === 0) buttons.push(`<button type="button" class="btn btn-danger" data-act="delete">Delete</button>`);
+    actionsEl.innerHTML = buttons.join(' ');
+  }
+
+  function lineTotalPence(qty, cost) {
+    return Math.round(qty * cost);
+  }
+
+  function renderLines(po) {
+    if (po.lines.length === 0) {
+      linesBody.innerHTML = '<tr><td colspan="9" class="empty">No lines yet — click <strong>+ Add line</strong> to start.</td></tr>';
+      return;
+    }
+    const editable = !['received', 'closed', 'cancelled'].includes(po.status);
+    linesBody.innerHTML = po.lines.map(l => {
+      const lineSub = lineTotalPence(l.quantity_ordered, l.unit_cost_pence);
+      return `
+        <tr class="line-row" data-lid="${l.id}">
+          <td class="mono">${l.line_no}</td>
+          <td class="mono"><strong>${fmt(l.sku)}</strong></td>
+          <td><input type="text" data-f="description" value="${(l.description||'').replace(/"/g,'&quot;')}" ${editable ? '' : 'readonly'}></td>
+          <td><input class="num" type="number" data-f="quantity_ordered" min="1" value="${l.quantity_ordered}" ${editable ? '' : 'readonly'}></td>
+          <td style="text-align:right;color:${l.quantity_received > 0 ? 'var(--green)' : 'var(--ink-dim)'};">${l.quantity_received}</td>
+          <td><input class="num" type="number" data-f="unit_cost_pounds" step="0.01" min="0" value="${(l.unit_cost_pence/100).toFixed(2)}" ${editable ? '' : 'readonly'}></td>
+          <td><input class="num" type="number" data-f="vat_rate_percent" min="0" max="100" value="${l.vat_rate_percent}" ${editable ? '' : 'readonly'}></td>
+          <td style="text-align:right"><strong>${money(lineSub, po.currency)}</strong></td>
+          <td>${editable ? `<button class="btn btn-danger" data-act="del-line" data-lid="${l.id}">×</button>` : ''}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  let currentPo = null;
+  async function load() {
+    const r = await fetch('/api/purchase-orders/' + id);
+    const d = await r.json();
+    if (!d.ok) { setStatus('Load failed: ' + d.error, 'err'); return; }
+    currentPo = d.purchase_order;
+    fillHeader(currentPo);
+    fillTotals(currentPo);
+    fillActions(currentPo);
+    renderLines(currentPo);
+  }
+
+  document.getElementById('po-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {
+      supplier_ref:    document.getElementById('f-supplier-ref').value || null,
+      expected_date:   document.getElementById('f-expected-date').value || null,
+      order_date:      document.getElementById('f-order-date').value || null,
+      currency:        document.getElementById('f-currency').value,
+      notes:           document.getElementById('f-notes').value || null,
+      deliver_to_warehouse_id: parseInt(warehouseSel.value, 10) || null
+    };
+    const r = await fetch('/api/purchase-orders/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!d.ok) { setStatus('Save failed: ' + d.error, 'err'); return; }
+    setStatus('Header saved.', 'ok');
+    load();
+  });
+
+  document.getElementById('add-line-btn').addEventListener('click', async () => {
+    const sku = prompt('SKU to add (search across products)?');
+    if (!sku) return;
+    const pr = await fetch('/api/products?q=' + encodeURIComponent(sku));
+    const pd = await pr.json();
+    if (!pd.ok || pd.products.length === 0) { alert('No product matched ' + sku); return; }
+    let target = pd.products[0];
+    if (pd.products.length > 1) {
+      const list = pd.products.map((p, i) => `${i+1}. ${p.sku} — ${p.name}`).join('\n');
+      const choice = prompt(`Pick a product:\n${list}\n\nEnter number:`);
+      const idx = parseInt(choice, 10) - 1;
+      if (!pd.products[idx]) return;
+      target = pd.products[idx];
+    }
+    const qtyStr = prompt('Quantity?', '1');
+    const qty = parseInt(qtyStr, 10);
+    if (!qty || qty < 1) return;
+    const cr = await fetch('/api/purchase-orders/' + id + '/lines', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product_id: target.id, quantity_ordered: qty })
+    });
+    const cd = await cr.json();
+    if (!cd.ok) { setStatus('Add failed: ' + cd.error, 'err'); return; }
+    load();
+  });
+
+  let editTimer = null;
+  linesBody.addEventListener('input', (e) => {
+    const inp = e.target;
+    if (!inp.dataset.f) return;
+    const tr = inp.closest('tr');
+    const lid = tr.dataset.lid;
+    clearTimeout(editTimer);
+    editTimer = setTimeout(async () => {
+      const get = (f) => tr.querySelector(`[data-f="${f}"]`).value;
+      const body = {
+        description: get('description'),
+        quantity_ordered: parseInt(get('quantity_ordered'), 10),
+        unit_cost_pence: Math.round(parseFloat(get('unit_cost_pounds')) * 100),
+        vat_rate_percent: parseInt(get('vat_rate_percent'), 10)
+      };
+      const r = await fetch('/api/purchase-orders/' + id + '/lines/' + lid, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Line save failed: ' + d.error, 'err'); return; }
+      load();
+    }, 400);
+  });
+
+  linesBody.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act="del-line"]');
+    if (!btn) return;
+    if (!confirm('Delete this line?')) return;
+    const lid = btn.dataset.lid;
+    const r = await fetch('/api/purchase-orders/' + id + '/lines/' + lid, { method: 'DELETE' });
+    const d = await r.json();
+    if (!d.ok) { setStatus('Delete failed: ' + d.error, 'err'); return; }
+    load();
+  });
+
+  actionsEl.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    const act = btn.dataset.act;
+    if (act === 'delete') {
+      if (!confirm('Delete this draft purchase order?')) return;
+      const r = await fetch('/api/purchase-orders/' + id, { method: 'DELETE' });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Delete failed: ' + d.error, 'err'); return; }
+      location.href = '/orders/purchase-orders';
+      return;
+    }
+    const prompts = {
+      release: 'Release this PO to the supplier? Once released, the supplier ref locks for audit.',
+      cancel:  'Cancel this PO?',
+      close:   'Close this PO? Use when the remaining qty will not be delivered.'
+    };
+    if (!confirm(prompts[act])) return;
+    const r = await fetch('/api/purchase-orders/' + id + '/status', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: act })
+    });
+    const d = await r.json();
+    if (!d.ok) { setStatus('Action failed: ' + d.error, 'err'); return; }
+    load();
+  });
+
+  await preload();
+  load();
+</script>
+
+</body>
+</html>
