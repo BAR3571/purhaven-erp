@@ -15,7 +15,23 @@ export default async function handler(req, res) {
       SELECT so.*,
              c.name AS customer_name,
              c.account_code AS customer_code,
-             (SELECT COUNT(*) FROM erp_sales_order_lines WHERE so_id = so.id) AS line_count
+             (SELECT COUNT(*) FROM erp_sales_order_lines WHERE so_id = so.id) AS line_count,
+             COALESCE((
+               SELECT SUM(quantity_ordered - quantity_despatched)
+               FROM erp_sales_order_lines WHERE so_id = so.id
+             ), 0) AS qty_outstanding,
+             COALESCE((
+               SELECT COUNT(*)
+               FROM erp_product_serials ps
+               JOIN erp_sales_order_lines sol ON sol.id = ps.allocated_to_so_line_id
+               WHERE sol.so_id = so.id AND ps.status = 'in_stock'
+             ), 0) AS qty_alloc_serials,
+             COALESCE((
+               SELECT SUM(a.qty)
+               FROM erp_so_po_allocations a
+               JOIN erp_sales_order_lines sol ON sol.id = a.so_line_id
+               WHERE sol.so_id = so.id
+             ), 0) AS qty_alloc_po
       FROM erp_sales_orders so
       JOIN erp_customers c ON c.id = so.customer_id
       WHERE (${likeQ}::text IS NULL

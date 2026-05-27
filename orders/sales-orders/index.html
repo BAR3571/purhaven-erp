@@ -51,13 +51,14 @@
           <th>Order date</th>
           <th>Required</th>
           <th>Status</th>
+          <th>Allocation</th>
           <th style="text-align:right">Lines</th>
           <th style="text-align:right">Total</th>
           <th></th>
         </tr>
       </thead>
       <tbody id="rows">
-        <tr><td colspan="9" class="empty">Loading…</td></tr>
+        <tr><td colspan="10" class="empty">Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -77,28 +78,87 @@
     const params = new URLSearchParams();
     if (q.value.trim()) params.set('q', q.value.trim());
     if (statusSel.value) params.set('status', statusSel.value);
-    rowsEl.innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
+    rowsEl.innerHTML = '<tr><td colspan="10" class="empty">Loading…</td></tr>';
     const r = await fetch('/api/sales-orders?' + params.toString());
     const d = await r.json();
-    if (!d.ok) { rowsEl.innerHTML = `<tr><td colspan="9" class="empty">Error: ${d.error}</td></tr>`; return; }
+    if (!d.ok) { rowsEl.innerHTML = `<tr><td colspan="10" class="empty">Error: ${d.error}</td></tr>`; return; }
     if (d.sales_orders.length === 0) {
-      rowsEl.innerHTML = '<tr><td colspan="9" class="empty"><h3>No sales orders yet</h3><p>Click <strong>+ New Sales Order</strong> to create one.</p></td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="10" class="empty"><h3>No sales orders yet</h3><p>Click <strong>+ New Sales Order</strong> to create one.</p></td></tr>';
       return;
     }
-    rowsEl.innerHTML = d.sales_orders.map(so => `
-      <tr>
-        <td class="mono"><a href="/orders/sales-orders/detail?id=${so.id}">${fmt(so.so_number)}</a></td>
-        <td><a href="/customers/detail?id=${so.customer_id}">${fmt(so.customer_name)}</a><div style="color:var(--ink-dim);font-size:0.78rem;">${fmt(so.customer_code)}</div></td>
-        <td>${fmt(so.customer_ref)}</td>
-        <td>${dateOnly(so.order_date)}</td>
-        <td>${so.required_date ? dateOnly(so.required_date) : '—'}</td>
-        <td><span class="pill pill-${so.status.replace(/_/g,'-')}">${so.status.replace(/_/g,' ')}</span>${so.source === 'website' ? ' <span class="pill pill-confirmed" style="font-size:0.62rem;">web</span>' : ''}</td>
-        <td style="text-align:right">${so.line_count}</td>
-        <td style="text-align:right"><strong>${money(so.total_pence, so.currency)}</strong></td>
-        <td><a href="/orders/sales-orders/detail?id=${so.id}" class="btn btn-ghost">Open →</a></td>
-      </tr>
-    `).join('');
+    rowsEl.innerHTML = d.sales_orders.map(so => {
+      const outstanding = Number(so.qty_outstanding || 0);
+      const allocSerials = Number(so.qty_alloc_serials || 0);
+      const allocPo = Number(so.qty_alloc_po || 0);
+      const allocTotal = allocSerials + allocPo;
+      const isOpen = ['confirmed', 'picking', 'part_despatched'].includes(so.status);
+
+      let allocChip = '';
+      let action = `<a href="/orders/sales-orders/detail?id=${so.id}" class="btn btn-ghost">Open →</a>`;
+
+      if (so.status === 'despatched' || so.status === 'complete' || so.status === 'invoiced') {
+        allocChip = '<span class="pill pill-despatched">Shipped</span>';
+      } else if (so.status === 'cancelled') {
+        allocChip = '<span class="pill pill-cancelled">N/A</span>';
+      } else if (outstanding === 0) {
+        allocChip = '<span class="pill pill-despatched">Done</span>';
+      } else if (allocTotal === 0) {
+        allocChip = '<span class="pill pill-cancelled" title="Nothing allocated yet">⨯ None</span>';
+      } else if (allocTotal < outstanding) {
+        allocChip = `<span class="pill pill-on-hold" title="Allocated ${allocTotal}/${outstanding}">${allocTotal}/${outstanding} part</span>`;
+      } else if (allocSerials >= outstanding) {
+        allocChip = `<span class="pill pill-despatched" title="All units in stock">✓ Stock (${allocSerials})</span>`;
+      } else {
+        // Fully covered but partly waiting on PO
+        allocChip = `<span class="pill pill-confirmed" title="Stock ${allocSerials} · PO ${allocPo}">PO ${allocPo} · stk ${allocSerials}</span>`;
+      }
+
+      if (isOpen && allocSerials >= outstanding && outstanding > 0) {
+        action = `<button type="button" class="btn btn-primary" data-act="quick-despatch" data-soid="${so.id}" title="Create despatch using ${allocSerials} allocated serial${allocSerials===1?'':'s'}">🚚 Despatch</button>`;
+      }
+
+      return `
+        <tr>
+          <td class="mono"><a href="/orders/sales-orders/detail?id=${so.id}">${fmt(so.so_number)}</a></td>
+          <td><a href="/customers/detail?id=${so.customer_id}">${fmt(so.customer_name)}</a><div style="color:var(--ink-dim);font-size:0.78rem;">${fmt(so.customer_code)}</div></td>
+          <td>${fmt(so.customer_ref)}</td>
+          <td>${dateOnly(so.order_date)}</td>
+          <td>${so.required_date ? dateOnly(so.required_date) : '—'}</td>
+          <td><span class="pill pill-${so.status.replace(/_/g,'-')}">${so.status.replace(/_/g,' ')}</span>${so.source === 'website' ? ' <span class="pill pill-confirmed" style="font-size:0.62rem;">web</span>' : ''}</td>
+          <td>${allocChip}</td>
+          <td style="text-align:right">${so.line_count}</td>
+          <td style="text-align:right"><strong>${money(so.total_pence, so.currency)}</strong></td>
+          <td>${action}</td>
+        </tr>
+      `;
+    }).join('');
   }
+
+  // Quick despatch button — fetches SO lines and creates a despatch for the outstanding qty on each
+  rowsEl.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act="quick-despatch"]');
+    if (!btn) return;
+    const soid = parseInt(btn.dataset.soid, 10);
+    if (!confirm('Create a despatch for the outstanding qty on all lines of this SO?')) return;
+    btn.disabled = true;
+    btn.textContent = 'Creating…';
+    try {
+      const soRes = await fetch('/api/sales-orders/' + soid).then(r => r.json());
+      if (!soRes.ok) { alert('Load failed: ' + soRes.error); return; }
+      const lines = soRes.sales_order.lines
+        .map(l => ({ so_line_id: l.id, qty_to_despatch: l.quantity_ordered - l.quantity_despatched }))
+        .filter(l => l.qty_to_despatch > 0);
+      if (lines.length === 0) { alert('Nothing outstanding to despatch'); return; }
+      const dn = await fetch('/api/despatches', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ so_id: soid, lines })
+      }).then(r => r.json());
+      if (!dn.ok) { alert('Create failed: ' + dn.error); return; }
+      location.href = '/orders/despatch/detail?id=' + dn.despatch_id;
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   // "+ New" opens a small inline customer picker
   document.getElementById('new-so-btn').addEventListener('click', async () => {
