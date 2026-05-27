@@ -509,7 +509,11 @@ const MIGRATIONS = [
     qty INTEGER NOT NULL CHECK (qty > 0)
   )`,
   `CREATE INDEX IF NOT EXISTS erp_parcel_items_parcel_idx ON erp_parcel_items(parcel_id)`,
-  `CREATE INDEX IF NOT EXISTS erp_parcel_items_line_idx ON erp_parcel_items(despatch_line_id)`
+  `CREATE INDEX IF NOT EXISTS erp_parcel_items_line_idx ON erp_parcel_items(despatch_line_id)`,
+
+  // ---------- Despatch email tracking (Phase 1 · Task #52d) ----------
+  `ALTER TABLE erp_despatches ADD COLUMN IF NOT EXISTS despatch_email_sent_at TIMESTAMPTZ`,
+  `ALTER TABLE erp_despatches ADD COLUMN IF NOT EXISTS despatch_email_to TEXT`
 ];
 
 export default async function handler(req, res) {

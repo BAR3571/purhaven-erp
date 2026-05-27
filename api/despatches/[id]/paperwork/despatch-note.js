@@ -1,21 +1,12 @@
-import { sql } from '../../../../lib/db.js';
 import { requireUser } from '../../../../lib/session.js';
 import { getDespatchWithRelations } from '../../../../lib/despatch.js';
 import { newDoc, writeAddressBlock, writeKv, sendPdf, applyPageFooter, colors, company } from '../../../../lib/pdf.js';
 
-export default async function handler(req, res) {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const id = parseInt(req.query.id, 10);
-  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
-
-  const dn = await getDespatchWithRelations(id);
-  if (!dn) return res.status(404).json({ error: 'Despatch not found' });
+/** Renders the despatch-note PDF directly to a Buffer.
+ *  Used by both the HTTP endpoint and the despatch-email handler. */
+export async function renderDespatchNoteBuffer(despatchId) {
+  const dn = await getDespatchWithRelations(despatchId);
+  if (!dn) return { buffer: null, dn: null };
 
   const doc = newDoc({ title: `Despatch Note · ${dn.despatch_number}` });
 
@@ -62,7 +53,6 @@ export default async function handler(req, res) {
     doc.font('Helvetica').text(l.description || '', 160, cy, { width: 320 });
     doc.font('Helvetica-Bold').text(String(l.qty_despatched || l.qty_picked || l.qty_to_despatch), 490, cy, { width: 58, align: 'right' });
     let newY = Math.max(doc.y, cy + 16);
-    // List serials below as warranty reference for the customer
     if ((l.assigned_serials || []).length > 0) {
       doc.fillColor(colors.DIM).font('Helvetica').fontSize(8);
       const serials = l.assigned_serials.map(s => s.serial_number).join(' · ');
@@ -75,7 +65,6 @@ export default async function handler(req, res) {
     doc.y = cy;
   }
 
-  // Service-interval reminder if any line has one
   const hasServicedItems = dn.lines.some(l => l.service_interval_months);
   if (hasServicedItems) {
     doc.moveDown(0.8);
@@ -92,5 +81,31 @@ export default async function handler(req, res) {
   );
 
   applyPageFooter(doc, { dnNumber: dn.despatch_number });
-  return sendPdf(doc, res, `despatch-note-${dn.despatch_number}.pdf`);
+
+  return await new Promise((resolve, reject) => {
+    const chunks = [];
+    doc.on('data', c => chunks.push(c));
+    doc.on('end', () => resolve({ buffer: Buffer.concat(chunks), dn }));
+    doc.on('error', reject);
+    doc.end();
+  });
+}
+
+export default async function handler(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const id = parseInt(req.query.id, 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
+
+  const { buffer, dn } = await renderDespatchNoteBuffer(id);
+  if (!buffer) return res.status(404).json({ error: 'Despatch not found' });
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="despatch-note-${dn.despatch_number}.pdf"`);
+  return res.send(buffer);
 }

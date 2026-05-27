@@ -142,8 +142,12 @@
     const isDespatched = dn.status === 'despatched';
     const prefix = isDespatched ? 'Despatch' : 'Pick list';
     titleEl.textContent = `${prefix} ${dn.despatch_number} · ${dn.so_number} · ${dn.customer_name}`;
-    subtitleEl.textContent = `${dn.status} · warehouse ${dn.warehouse_code || '—'}` +
-                             (dn.picker_name ? ` · picker ${dn.picker_name}` : (dn.picker_email ? ` · ${dn.picker_email}` : ''));
+    let sub = `${dn.status} · warehouse ${dn.warehouse_code || '—'}` +
+              (dn.picker_name ? ` · picker ${dn.picker_name}` : (dn.picker_email ? ` · ${dn.picker_email}` : ''));
+    if (dn.despatch_email_sent_at) {
+      sub += ` · ✉ emailed ${new Date(dn.despatch_email_sent_at).toLocaleString('en-GB')}${dn.despatch_email_to ? ' to ' + dn.despatch_email_to : ''}`;
+    }
+    subtitleEl.textContent = sub;
     document.getElementById('f-carrier').value  = dn.carrier || '';
     document.getElementById('f-tracking').value = dn.tracking_number || '';
     document.getElementById('f-weight').value   = dn.weight_kg ?? '';
@@ -170,6 +174,8 @@
     }
     if (dn.status === 'despatched') {
       buttons.push(`<a class="btn btn-ghost" href="/api/despatches/${dn.id}/paperwork/despatch-note" target="_blank" rel="noopener">📄 Despatch note</a>`);
+      const emailLabel = dn.despatch_email_sent_at ? '✉ Resend despatch email' : '✉ Send despatch email';
+      buttons.push(`<button type="button" class="btn btn-ghost" data-act="send-email">${emailLabel}</button>`);
     }
     if (dn.status === 'pending') buttons.push(`<button type="button" class="btn btn-primary" data-act="start-picking">▶ Start picking</button>`);
     if (dn.status === 'picking') buttons.push(`<button type="button" class="btn btn-primary" data-act="confirm-picking">✓ Confirm pick &amp; packaging</button>`);
@@ -326,7 +332,7 @@
         document.getElementById(carrier ? 'f-tracking' : 'f-carrier').focus();
         return;
       }
-      if (!confirm(`Confirm despatch via ${carrier} (${tracking})? Stock will be decremented, serials flipped to despatched, and the SO status updated.`)) return;
+      if (!confirm(`Confirm despatch via ${carrier} (${tracking})? Stock will be decremented, serials flipped to despatched, the SO status updated, and the despatch note emailed to the customer.`)) return;
       const body = {
         action: 'despatch',
         carrier, tracking_number: tracking,
@@ -338,7 +344,24 @@
       });
       const d = await r.json();
       if (!d.ok) { setStatus('Despatch failed: ' + d.error, 'err'); return; }
-      setStatus('Despatched.', 'ok');
+      const emailMsg = d.email?.sent_to
+        ? ` Email sent to ${d.email.sent_to}.`
+        : (d.email?.error ? ' Email did NOT send: ' + d.email.error : '');
+      setStatus('Despatched.' + emailMsg, d.email?.error ? 'err' : 'ok');
+      load();
+      return;
+    }
+
+    if (act === 'send-email') {
+      const to = prompt("Send despatch email to (blank = customer's email on file):", '');
+      if (to === null) return;
+      const r = await fetch('/api/despatches/' + id + '/send-email', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: to.trim() || null })
+      });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Email failed: ' + d.error, 'err'); return; }
+      setStatus('Email sent to ' + d.sent_to + '.', 'ok');
       load();
       return;
     }

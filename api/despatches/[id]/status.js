@@ -2,6 +2,7 @@ import { sql } from '../../../lib/db.js';
 import { requireUser } from '../../../lib/session.js';
 import { refreshSoFromDespatches, addMonths } from '../../../lib/despatch.js';
 import { adjustStock } from '../../../lib/stock.js';
+import { sendDespatchEmail } from '../../../lib/despatch-email.js';
 
 // Status transitions on a despatch.
 const ALLOWED_FROM = {
@@ -199,6 +200,18 @@ export default async function handler(req, res) {
       WHERE id = ${id}
     `;
     await refreshSoFromDespatches(dn.so_id);
+
+    // Fire the despatch email automatically. Don't block the action on a mail failure.
+    let emailResult = null;
+    if (b.send_email !== false) {
+      try {
+        emailResult = await sendDespatchEmail(id, { userId: user.id });
+      } catch (err) {
+        emailResult = { error: err.message };
+      }
+    }
+    const updated = await sql`SELECT status FROM erp_despatches WHERE id = ${id}`;
+    return res.status(200).json({ ok: true, status: updated[0].status, email: emailResult });
   }
 
   else if (action === 'cancel') {
