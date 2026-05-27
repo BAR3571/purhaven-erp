@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reports · PurHaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  .reports-section { margin-bottom: 28px; }
+  .reports-section h2 {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--ink-dim);
+    font-family: 'Manrope', sans-serif;
+    font-weight: 700;
+    margin: 0 0 10px;
+  }
+  .report-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+  }
+  .report-card {
+    display: block;
+    text-decoration: none;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    transition: border-color 0.15s, transform 0.05s;
+  }
+  .report-card:hover { border-color: var(--sky); transform: translateY(-1px); }
+  .report-card .emoji { font-size: 1.4rem; margin-bottom: 6px; display: block; }
+  .report-card .name { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1rem; margin: 0 0 4px; }
+  .report-card .desc { color: var(--ink-soft); font-size: 0.82rem; line-height: 1.4; margin: 0; }
+</style>
+</head>
+<body data-page="reports">
+
+<div class="page-header">
+  <h1>📋 Reports</h1>
+</div>
+
+<div class="reports-section">
+  <h2>Sales</h2>
+  <div class="report-grid">
+    <a class="report-card" href="/reports/view?key=sales-by-customer"><span class="emoji">👥</span><p class="name">Sales by customer</p><p class="desc">Revenue per customer for the selected period.</p></a>
+    <a class="report-card" href="/reports/view?key=sales-by-month"><span class="emoji">📅</span><p class="name">Sales by month</p><p class="desc">Order count and value grouped by calendar month.</p></a>
+    <a class="report-card" href="/reports/view?key=sales-by-product"><span class="emoji">📦</span><p class="name">Sales by product</p><p class="desc">Top-selling SKUs by quantity and value.</p></a>
+  </div>
+</div>
+
+<div class="reports-section">
+  <h2>Operations</h2>
+  <div class="report-grid">
+    <a class="report-card" href="/reports/view?key=outstanding-so-lines"><span class="emoji">⏳</span><p class="name">Outstanding SO lines</p><p class="desc">Open order lines not yet fully despatched.</p></a>
+    <a class="report-card" href="/reports/view?key=despatch-summary"><span class="emoji">🚚</span><p class="name">Despatch summary</p><p class="desc">All despatches with carrier and tracking details.</p></a>
+    <a class="report-card" href="/reports/view?key=service-due"><span class="emoji">🛠️</span><p class="name">Service due</p><p class="desc">Serials in the field due for filter/UV replacement within 90 days.</p></a>
+  </div>
+</div>
+
+<div class="reports-section">
+  <h2>Purchasing</h2>
+  <div class="report-grid">
+    <a class="report-card" href="/reports/view?key=purchase-by-supplier"><span class="emoji">🏷️</span><p class="name">Purchase by supplier</p><p class="desc">Spend per supplier for the selected period.</p></a>
+  </div>
+</div>
+
+<div class="reports-section">
+  <h2>Stock</h2>
+  <div class="report-grid">
+    <a class="report-card" href="/reports/view?key=low-stock"><span class="emoji">⚠️</span><p class="name">Low stock</p><p class="desc">SKUs at or below their minimum stock level.</p></a>
+  </div>
+</div>
+
+<script type="module">
+  import { mountShell } from '/app.js';
+  await mountShell();
+</script>
+
+</body>
+</html>

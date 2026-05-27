@@ -17,36 +17,77 @@
 </div>
 
 <div class="tile-row">
-  <div class="tile tile-orange">
+  <a href="/orders/despatch?status=pending" class="tile tile-orange" style="text-decoration:none;color:inherit;">
     <div class="label">⏳ Pending picks</div>
     <div class="val" id="t-pending">—</div>
     <div class="sub">awaiting assignment</div>
-  </div>
-  <div class="tile tile-purple">
+  </a>
+  <a href="/orders/despatch?status=picking" class="tile tile-purple" style="text-decoration:none;color:inherit;">
     <div class="label">📦 In picking</div>
     <div class="val" id="t-picking">—</div>
     <div class="sub">to confirm</div>
-  </div>
-  <div class="tile tile-green">
+  </a>
+  <a href="/orders/despatch?status=packed" class="tile tile-green" style="text-decoration:none;color:inherit;">
     <div class="label">📤 Packed</div>
     <div class="val" id="t-packed">—</div>
     <div class="sub">awaiting despatch</div>
-  </div>
-  <div class="tile tile-sky">
+  </a>
+  <a href="/orders/despatch?status=despatched" class="tile tile-sky" style="text-decoration:none;color:inherit;">
     <div class="label">🚚 Despatched today</div>
     <div class="val" id="t-despatched">—</div>
-    <div class="sub" id="t-week-sub">0 this week</div>
-  </div>
+    <div class="sub" id="t-week-sub">— this week</div>
+  </a>
+</div>
+
+<div class="tile-row">
+  <a href="/orders/sales-orders" class="tile tile-sky" style="text-decoration:none;color:inherit;">
+    <div class="label">📦 Open sales orders</div>
+    <div class="val" id="t-open-so">—</div>
+    <div class="sub">confirmed · picking · part-despatched</div>
+  </a>
+  <a href="/orders/purchase-orders" class="tile tile-orange" style="text-decoration:none;color:inherit;">
+    <div class="label">📋 Open purchase orders</div>
+    <div class="val" id="t-open-po">—</div>
+    <div class="sub">released · part-received</div>
+  </a>
+  <a href="/reports/view?key=low-stock" class="tile tile-pink" style="text-decoration:none;color:inherit;">
+    <div class="label">⚠️ Low stock SKUs</div>
+    <div class="val" id="t-low-stock">—</div>
+    <div class="sub">at or below min_stock_level</div>
+  </a>
+  <a href="/reports/view?key=service-due" class="tile tile-purple" style="text-decoration:none;color:inherit;">
+    <div class="label">🛠️ Service due (30d)</div>
+    <div class="val" id="t-service-due">—</div>
+    <div class="sub">serials with service_due_at ≤ +30d</div>
+  </a>
 </div>
 
 <div class="card accent-orange">
-  <h2 style="margin: 0 0 4px;">Phase 1 in progress</h2>
-  <p style="color: var(--ink-soft); margin: 0;">Modules unlock as they ship: Customers ✓ · Suppliers ✓ · Products &amp; Stock ✓ · Sales Orders ✓ · Purchase Orders ✓ · Goods In ✓ · Despatch ✓.</p>
+  <h2 style="margin: 0 0 4px;">Reports</h2>
+  <p style="color: var(--ink-soft); margin: 0;">Head to <a href="/reports">📋 Reports</a> for revenue, outstanding lines, despatch summary and stock valuation.</p>
 </div>
 
 <script type="module">
   import { mountShell } from '/app.js';
   await mountShell();
+
+  try {
+    const r = await fetch('/api/dashboard');
+    const d = await r.json();
+    if (d.ok) {
+      document.getElementById('t-pending').textContent      = d.pending_picks ?? 0;
+      document.getElementById('t-picking').textContent      = d.in_picking ?? 0;
+      document.getElementById('t-packed').textContent       = d.packed ?? 0;
+      document.getElementById('t-despatched').textContent   = d.despatched_today ?? 0;
+      document.getElementById('t-week-sub').textContent     = (d.despatched_this_week ?? 0) + ' this week';
+      document.getElementById('t-open-so').textContent      = d.open_sales_orders ?? 0;
+      document.getElementById('t-open-po').textContent      = d.open_purchase_orders ?? 0;
+      document.getElementById('t-low-stock').textContent    = d.low_stock_skus ?? 0;
+      document.getElementById('t-service-due').textContent  = d.service_due_30d ?? 0;
+    }
+  } catch (err) {
+    console.warn('dashboard load failed:', err);
+  }
 </script>
 
 </body>

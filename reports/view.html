@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Report · PurHaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body data-page="reports">
+
+<div class="page-header">
+  <div>
+    <a href="/reports" style="color:var(--ink-dim);font-size:0.85rem;">← Reports</a>
+    <h1 id="title" style="margin:4px 0 0;">Report</h1>
+    <p id="desc" style="color:var(--ink-soft);margin:4px 0 0;font-size:0.9rem;"></p>
+  </div>
+  <div class="actions">
+    <a id="csv-btn" class="btn btn-ghost" target="_blank" rel="noopener">⤓ CSV</a>
+  </div>
+</div>
+
+<div class="card">
+  <form id="filter-form" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin:0;">
+    <div class="field" style="margin:0;"><label for="f-from">From</label><input type="date" id="f-from"></div>
+    <div class="field" style="margin:0;"><label for="f-to">To</label><input type="date" id="f-to"></div>
+    <div style="display:flex;gap:6px;">
+      <button type="submit" class="btn btn-primary">Run</button>
+      <button type="button" class="btn btn-ghost" id="preset-7">7d</button>
+      <button type="button" class="btn btn-ghost" id="preset-30">30d</button>
+      <button type="button" class="btn btn-ghost" id="preset-90">90d</button>
+      <button type="button" class="btn btn-ghost" id="preset-ytd">YTD</button>
+      <button type="button" class="btn btn-ghost" id="preset-all">All</button>
+    </div>
+  </form>
+</div>
+
+<div class="card" style="padding:0;">
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr id="head"></tr></thead>
+      <tbody id="rows"><tr><td class="empty">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<p id="footnote" style="color:var(--ink-dim);font-size:0.78rem;margin-top:10px;"></p>
+
+<script type="module">
+  import { mountShell } from '/app.js';
+  await mountShell();
+
+  const params = new URLSearchParams(window.location.search);
+  const key = params.get('key');
+  if (!key) { document.getElementById('title').textContent = 'No report selected'; throw new Error('no key'); }
+
+  const headEl = document.getElementById('head');
+  const rowsEl = document.getElementById('rows');
+  const titleEl = document.getElementById('title');
+  const descEl = document.getElementById('desc');
+  const csvBtn = document.getElementById('csv-btn');
+  const fromEl = document.getElementById('f-from');
+  const toEl = document.getElementById('f-to');
+
+  function setPreset(daysOrMode) {
+    const today = new Date();
+    const isoOf = (d) => d.toISOString().slice(0,10);
+    if (daysOrMode === 'all') { fromEl.value = ''; toEl.value = ''; return; }
+    if (daysOrMode === 'ytd') {
+      fromEl.value = isoOf(new Date(today.getFullYear(), 0, 1));
+      toEl.value = isoOf(today);
+      return;
+    }
+    const days = parseInt(daysOrMode, 10);
+    const from = new Date(today);
+    from.setDate(from.getDate() - days);
+    fromEl.value = isoOf(from);
+    toEl.value = isoOf(today);
+  }
+
+  document.getElementById('preset-7').addEventListener('click',  () => { setPreset(7);    load(); });
+  document.getElementById('preset-30').addEventListener('click', () => { setPreset(30);   load(); });
+  document.getElementById('preset-90').addEventListener('click', () => { setPreset(90);   load(); });
+  document.getElementById('preset-ytd').addEventListener('click',() => { setPreset('ytd');load(); });
+  document.getElementById('preset-all').addEventListener('click',() => { setPreset('all');load(); });
+
+  document.getElementById('filter-form').addEventListener('submit', (e) => { e.preventDefault(); load(); });
+
+  function paramStr() {
+    const q = new URLSearchParams();
+    if (fromEl.value) q.set('from', fromEl.value);
+    if (toEl.value)   q.set('to',   toEl.value);
+    return q.toString();
+  }
+
+  async function load() {
+    const url = '/api/reports/' + encodeURIComponent(key) + (paramStr() ? '?' + paramStr() : '');
+    rowsEl.innerHTML = '<tr><td class="empty">Loading…</td></tr>';
+    const r = await fetch(url);
+    const d = await r.json();
+    if (!d.ok) {
+      rowsEl.innerHTML = `<tr><td class="empty" style="color:var(--red)">Error: ${d.error}</td></tr>`;
+      return;
+    }
+    titleEl.textContent = d.label;
+    descEl.textContent = d.description || '';
+    document.title = d.label + ' · PurHaven Back Office';
+    headEl.innerHTML = d.columns.map(c => `<th>${escapeHtml(c)}</th>`).join('');
+    if (d.rows.length === 0) {
+      rowsEl.innerHTML = `<tr><td colspan="${d.columns.length}" class="empty">No rows for this period.</td></tr>`;
+    } else {
+      rowsEl.innerHTML = d.rows.map(row => `<tr>${row.map((v, i) => {
+        const numeric = typeof v === 'number' || /^-?£?[\d,]+(\.\d+)?$/.test(String(v));
+        return `<td style="${numeric ? 'text-align:right;' : ''}">${escapeHtml(v)}</td>`;
+      }).join('')}</tr>`).join('');
+    }
+    csvBtn.href = url + (url.includes('?') ? '&' : '?') + 'format=csv';
+    document.getElementById('footnote').textContent = `${d.rows.length} row${d.rows.length === 1 ? '' : 's'}.`;
+  }
+
+  function escapeHtml(v) {
+    if (v == null) return '';
+    return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  setPreset(90);
+  load();
+</script>
+
+</body>
+</html>
