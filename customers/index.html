@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Customers · Purhaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body data-page="customers">
+
+<div class="page-header">
+  <h1>👥 Customers</h1>
+  <div class="actions">
+    <a href="/customers/detail?id=new" class="btn btn-primary">+ New Customer</a>
+  </div>
+</div>
+
+<div class="search-row">
+  <input type="search" id="q" placeholder="Search name, account code, VAT number…">
+  <label style="display:flex;align-items:center;gap:6px;color:var(--ink-soft);font-size:0.85rem;">
+    <input type="checkbox" id="include-inactive"> Show inactive
+  </label>
+</div>
+
+<div class="card" style="padding: 0;">
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Account #</th>
+          <th>Name</th>
+          <th>VAT #</th>
+          <th>Currency</th>
+          <th>Terms</th>
+          <th style="text-align:right">Contacts</th>
+          <th style="text-align:right">Addresses</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="rows">
+        <tr><td colspan="9" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script type="module">
+  import { mountShell, fmt } from '/app.js';
+  await mountShell();
+
+  const rowsEl = document.getElementById('rows');
+  const q = document.getElementById('q');
+  const incInactive = document.getElementById('include-inactive');
+  let timer;
+
+  async function load() {
+    const params = new URLSearchParams();
+    if (q.value.trim()) params.set('q', q.value.trim());
+    if (incInactive.checked) params.set('includeInactive', '1');
+    rowsEl.innerHTML = '<tr><td colspan="9" class="empty">Loading…</td></tr>';
+    const r = await fetch('/api/customers?' + params.toString());
+    const d = await r.json();
+    if (!d.ok) { rowsEl.innerHTML = `<tr><td colspan="9" class="empty">Error: ${d.error}</td></tr>`; return; }
+    if (d.customers.length === 0) {
+      rowsEl.innerHTML = '<tr><td colspan="9" class="empty"><h3>No customers yet</h3><p>Click <strong>+ New Customer</strong> to add the first one.</p></td></tr>';
+      return;
+    }
+    rowsEl.innerHTML = d.customers.map(c => `
+      <tr>
+        <td class="mono"><a href="/customers/detail?id=${c.id}">${fmt(c.account_code)}</a></td>
+        <td><a href="/customers/detail?id=${c.id}"><strong>${fmt(c.name)}</strong></a></td>
+        <td>${fmt(c.vat_number)}</td>
+        <td>${fmt(c.currency)}</td>
+        <td>${fmt(c.payment_terms)}</td>
+        <td style="text-align:right">${c.contact_count}</td>
+        <td style="text-align:right">${c.address_count}</td>
+        <td>
+          ${c.active ? '<span class="pill pill-despatched">Active</span>' : '<span class="pill pill-cancelled">Inactive</span>'}
+          ${c.credit_hold ? ' <span class="pill pill-on-hold">Credit hold</span>' : ''}
+        </td>
+        <td><a href="/customers/detail?id=${c.id}" class="btn btn-ghost">Open →</a></td>
+      </tr>
+    `).join('');
+  }
+
+  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 200); });
+  incInactive.addEventListener('change', load);
+  load();
+</script>
+
+</body>
+</html>

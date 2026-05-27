@@ -10,72 +10,43 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles.css">
 </head>
-<body>
+<body data-page="warehouse">
 
-<div class="app-shell">
-
-  <header class="topbar">
-    <a href="/" class="brand"><span class="dot"></span>Purhaven</a>
-    <nav>
-      <a href="/" class="active">🏭 Warehouse</a>
-      <a href="/customers">👥 Customers</a>
-      <a href="/suppliers">🏷️ Suppliers</a>
-      <a href="/orders">📦 Orders</a>
-      <a href="/products">🧰 Products &amp; Stock</a>
-      <a href="/reports">📋 Reports</a>
-    </nav>
-    <div class="right">
-      <a href="https://www.purhaven.co.uk" target="_blank" rel="noopener" class="back-link">← purhaven.co.uk</a>
-      <span class="user" id="user">…</span>
-      <button class="btn btn-ghost" id="logout-btn" title="Sign out">Sign out</button>
-    </div>
-  </header>
-
-  <main>
-    <div class="page-header">
-      <h1>🏭 Warehouse</h1>
-    </div>
-
-    <div class="tile-row">
-      <div class="tile tile-orange">
-        <div class="label">⏳ Pending picks</div>
-        <div class="val" id="t-pending">—</div>
-        <div class="sub">awaiting assignment</div>
-      </div>
-      <div class="tile tile-purple">
-        <div class="label">📦 In picking</div>
-        <div class="val" id="t-picking">—</div>
-        <div class="sub">to confirm</div>
-      </div>
-      <div class="tile tile-green">
-        <div class="label">📤 Packed</div>
-        <div class="val" id="t-packed">—</div>
-        <div class="sub">awaiting despatch</div>
-      </div>
-      <div class="tile tile-sky">
-        <div class="label">🚚 Despatched today</div>
-        <div class="val" id="t-despatched">—</div>
-        <div class="sub" id="t-week-sub">0 this week</div>
-      </div>
-    </div>
-
-    <div class="card accent-orange">
-      <h2 style="margin: 0 0 4px;">Phase 1 in progress</h2>
-      <p style="color: var(--ink-soft); margin: 0;">Modules unlock as they ship: Customers, Suppliers, Products &amp; Stock, then Orders &amp; Despatch.</p>
-    </div>
-  </main>
+<div class="page-header">
+  <h1>🏭 Warehouse</h1>
 </div>
 
-<script>
-  fetch('/api/auth/me').then(r => r.json()).then(d => {
-    if (!d.ok) { window.location.href = '/login'; return; }
-    document.getElementById('user').textContent = d.name || d.email;
-  });
+<div class="tile-row">
+  <div class="tile tile-orange">
+    <div class="label">⏳ Pending picks</div>
+    <div class="val" id="t-pending">—</div>
+    <div class="sub">awaiting assignment</div>
+  </div>
+  <div class="tile tile-purple">
+    <div class="label">📦 In picking</div>
+    <div class="val" id="t-picking">—</div>
+    <div class="sub">to confirm</div>
+  </div>
+  <div class="tile tile-green">
+    <div class="label">📤 Packed</div>
+    <div class="val" id="t-packed">—</div>
+    <div class="sub">awaiting despatch</div>
+  </div>
+  <div class="tile tile-sky">
+    <div class="label">🚚 Despatched today</div>
+    <div class="val" id="t-despatched">—</div>
+    <div class="sub" id="t-week-sub">0 this week</div>
+  </div>
+</div>
 
-  document.getElementById('logout-btn').addEventListener('click', async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    window.location.href = '/login';
-  });
+<div class="card accent-orange">
+  <h2 style="margin: 0 0 4px;">Phase 1 in progress</h2>
+  <p style="color: var(--ink-soft); margin: 0;">Modules unlock as they ship: Customers ✓ · Suppliers · Products &amp; Stock · Orders &amp; Despatch.</p>
+</div>
+
+<script type="module">
+  import { mountShell } from '/app.js';
+  await mountShell();
 </script>
 
 </body>

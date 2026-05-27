@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Customer · Purhaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  .twocol { display: grid; grid-template-columns: 2fr 3fr; gap: 18px; align-items: start; }
+  @media (max-width: 1000px) { .twocol { grid-template-columns: 1fr; } }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .subcard { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+  .subcard .row { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+  .subcard h4 { margin: 0 0 4px; font-size: 0.95rem; }
+  .subcard .meta { color: var(--ink-soft); font-size: 0.82rem; }
+  .badge-mini { display:inline-block; padding:1px 7px; border-radius:99px; background: var(--bg); border: 1px solid var(--border); font-size: 0.7rem; color: var(--ink-soft); margin-left: 4px; }
+  .err { color: #fca5a5; }
+  .ok { color: #4ade80; }
+</style>
+</head>
+<body data-page="customers">
+
+<div id="page-header" class="page-header">
+  <div>
+    <a href="/customers" style="color:var(--ink-dim);font-size:0.85rem;">← Customers</a>
+    <h1 id="title" style="margin:4px 0 0;">Customer</h1>
+  </div>
+  <div class="actions" id="actions"></div>
+</div>
+
+<div id="status-msg" style="margin-bottom:12px;"></div>
+
+<div class="twocol">
+  <div>
+    <div class="card accent-sky">
+      <h2 style="margin-top:0">Details</h2>
+      <form id="customer-form">
+        <div class="field-row">
+          <div class="field">
+            <label for="f-account">Account #</label>
+            <input type="text" id="f-account" name="account_code" placeholder="auto-generated">
+          </div>
+          <div class="field">
+            <label for="f-currency">Currency</label>
+            <select id="f-currency" name="currency">
+              <option value="GBP">GBP</option>
+              <option value="EUR">EUR</option>
+              <option value="USD">USD</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="f-name">Name *</label>
+          <input type="text" id="f-name" name="name" required>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="f-vat">VAT number</label>
+            <input type="text" id="f-vat" name="vat_number">
+          </div>
+          <div class="field">
+            <label for="f-eori">EORI number</label>
+            <input type="text" id="f-eori" name="eori_number">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="f-terms">Payment terms</label>
+            <input type="text" id="f-terms" name="payment_terms" placeholder="e.g. Net 30, On receipt">
+          </div>
+          <div class="field">
+            <label for="f-credit">Credit limit (£)</label>
+            <input type="number" id="f-credit" name="credit_limit" min="0" step="1">
+          </div>
+        </div>
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink);">
+            <input type="checkbox" id="f-hold" name="credit_hold">
+            On credit hold — block new sales orders
+          </label>
+        </div>
+        <div class="field">
+          <label for="f-notes">Notes</label>
+          <textarea id="f-notes" name="notes" rows="3"></textarea>
+        </div>
+
+        <div class="toolbar" style="margin-top:8px;">
+          <button type="submit" class="btn btn-primary" id="save-btn">Save</button>
+          <button type="button" class="btn btn-danger" id="deactivate-btn" style="display:none;">Deactivate</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="relations" style="display:none;">
+    <div class="card accent-purple">
+      <div class="row" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <h2 style="margin:0;">Contacts</h2>
+        <button type="button" class="btn btn-sky" id="add-contact-btn">+ Add contact</button>
+      </div>
+      <div id="contacts"></div>
+    </div>
+
+    <div class="card accent-orange">
+      <div class="row" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <h2 style="margin:0;">Addresses</h2>
+        <button type="button" class="btn btn-sky" id="add-address-btn">+ Add address</button>
+      </div>
+      <div id="addresses"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { mountShell, fmt } from '/app.js';
+  await mountShell();
+
+  const params = new URLSearchParams(window.location.search);
+  const rawId = params.get('id');
+  const isNew = !rawId || rawId === 'new';
+  const id = isNew ? null : parseInt(rawId, 10);
+
+  const titleEl = document.getElementById('title');
+  const statusEl = document.getElementById('status-msg');
+  const form = document.getElementById('customer-form');
+  const saveBtn = document.getElementById('save-btn');
+  const deactivateBtn = document.getElementById('deactivate-btn');
+  const relationsEl = document.getElementById('relations');
+  const contactsEl = document.getElementById('contacts');
+  const addressesEl = document.getElementById('addresses');
+
+  function setStatus(msg, cls) {
+    statusEl.innerHTML = msg ? `<div class="card accent-${cls === 'err' ? 'pink' : 'green'}" style="padding:10px 14px;"><span class="${cls}">${msg}</span></div>` : '';
+    if (msg) setTimeout(() => { statusEl.innerHTML = ''; }, 4000);
+  }
+
+  function fillForm(c) {
+    document.getElementById('f-account').value = c.account_code || '';
+    document.getElementById('f-name').value    = c.name || '';
+    document.getElementById('f-vat').value     = c.vat_number || '';
+    document.getElementById('f-eori').value    = c.eori_number || '';
+    document.getElementById('f-currency').value= c.currency || 'GBP';
+    document.getElementById('f-terms').value   = c.payment_terms || '';
+    document.getElementById('f-credit').value  = c.credit_limit_pence != null ? Math.round(c.credit_limit_pence / 100) : '';
+    document.getElementById('f-hold').checked  = !!c.credit_hold;
+    document.getElementById('f-notes').value   = c.notes || '';
+  }
+
+  function renderContacts(contacts) {
+    if (contacts.length === 0) {
+      contactsEl.innerHTML = '<p style="color:var(--ink-dim);margin:0;">No contacts yet.</p>';
+      return;
+    }
+    contactsEl.innerHTML = contacts.map(c => `
+      <div class="subcard" data-cid="${c.id}">
+        <div class="row">
+          <div>
+            <h4>${fmt(c.name)} ${c.is_primary ? '<span class="badge-mini">Primary</span>' : ''}</h4>
+            <div class="meta">${fmt(c.position) === '—' ? '' : fmt(c.position) + ' · '}${fmt(c.email)} ${c.phone ? '· ' + fmt(c.phone) : ''}</div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-ghost" data-action="edit-contact" data-cid="${c.id}">Edit</button>
+            <button class="btn btn-danger" data-action="del-contact" data-cid="${c.id}">×</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function renderAddresses(addresses) {
+    if (addresses.length === 0) {
+      addressesEl.innerHTML = '<p style="color:var(--ink-dim);margin:0;">No addresses yet.</p>';
+      return;
+    }
+    addressesEl.innerHTML = addresses.map(a => `
+      <div class="subcard" data-aid="${a.id}">
+        <div class="row">
+          <div>
+            <h4>${fmt(a.label) === '—' ? 'Address' : fmt(a.label)}
+              <span class="badge-mini">${a.type}</span>
+              ${a.is_default ? '<span class="badge-mini">Default</span>' : ''}
+            </h4>
+            <div class="meta">
+              ${[a.line1, a.line2, a.city, a.county, a.postcode, a.country].filter(Boolean).map(fmt).join(', ')}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-ghost" data-action="edit-address" data-aid="${a.id}">Edit</button>
+            <button class="btn btn-danger" data-action="del-address" data-aid="${a.id}">×</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function loadCustomer() {
+    if (isNew) {
+      titleEl.textContent = 'New customer';
+      return;
+    }
+    const r = await fetch('/api/customers/' + id);
+    const d = await r.json();
+    if (!d.ok) { setStatus('Failed to load: ' + d.error, 'err'); return; }
+    fillForm(d.customer);
+    titleEl.textContent = d.customer.name + ' · ' + d.customer.account_code;
+    relationsEl.style.display = 'block';
+    deactivateBtn.style.display = d.customer.active ? 'inline-flex' : 'none';
+    renderContacts(d.customer.contacts);
+    renderAddresses(d.customer.addresses);
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+    const fd = new FormData(form);
+    const creditPounds = fd.get('credit_limit');
+    const body = {
+      account_code: fd.get('account_code') || undefined,
+      name: fd.get('name'),
+      vat_number: fd.get('vat_number') || null,
+      eori_number: fd.get('eori_number') || null,
+      currency: fd.get('currency') || 'GBP',
+      payment_terms: fd.get('payment_terms') || null,
+      credit_limit_pence: creditPounds ? Math.round(parseFloat(creditPounds) * 100) : null,
+      credit_hold: fd.get('credit_hold') === 'on',
+      notes: fd.get('notes') || null
+    };
+    const url = isNew ? '/api/customers' : '/api/customers/' + id;
+    const method = isNew ? 'POST' : 'PUT';
+    const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save';
+    if (!d.ok) { setStatus('Save failed: ' + d.error, 'err'); return; }
+    if (isNew) {
+      window.location.href = '/customers/detail?id=' + d.customer.id;
+    } else {
+      setStatus('Saved.', 'ok');
+      loadCustomer();
+    }
+  });
+
+  deactivateBtn.addEventListener('click', async () => {
+    if (!confirm('Deactivate this customer? You can re-activate later.')) return;
+    const r = await fetch('/api/customers/' + id, { method: 'DELETE' });
+    const d = await r.json();
+    if (!d.ok) { setStatus('Failed: ' + d.error, 'err'); return; }
+    window.location.href = '/customers';
+  });
+
+  // Contacts: add / edit / delete
+  document.getElementById('add-contact-btn').addEventListener('click', () => {
+    const name = prompt('Contact name?');
+    if (!name) return;
+    const email = prompt('Email? (optional)') || '';
+    const phone = prompt('Phone? (optional)') || '';
+    const position = prompt('Position? (optional)') || '';
+    const isPrimary = confirm('Mark as primary contact?');
+    fetch('/api/customers/' + id + '/contacts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, phone, position, is_primary: isPrimary })
+    }).then(r => r.json()).then(d => {
+      if (!d.ok) { setStatus('Add failed: ' + d.error, 'err'); return; }
+      loadCustomer();
+    });
+  });
+
+  contactsEl.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const cid = btn.dataset.cid;
+    if (btn.dataset.action === 'del-contact') {
+      if (!confirm('Delete this contact?')) return;
+      const r = await fetch('/api/customers/' + id + '/contacts/' + cid, { method: 'DELETE' });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Delete failed: ' + d.error, 'err'); return; }
+      loadCustomer();
+    } else if (btn.dataset.action === 'edit-contact') {
+      const card = btn.closest('.subcard');
+      const current = card.querySelector('h4').textContent.trim().replace(/Primary$/, '').trim();
+      const name = prompt('Name?', current) ?? null;
+      if (name === null) return;
+      const email = prompt('Email?') || '';
+      const phone = prompt('Phone?') || '';
+      const position = prompt('Position?') || '';
+      const isPrimary = confirm('Mark as primary?');
+      const r = await fetch('/api/customers/' + id + '/contacts/' + cid, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, phone, position, is_primary: isPrimary })
+      });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Update failed: ' + d.error, 'err'); return; }
+      loadCustomer();
+    }
+  });
+
+  // Addresses: add / edit / delete
+  document.getElementById('add-address-btn').addEventListener('click', async () => {
+    const label = prompt('Label? (e.g. Head Office, Warehouse)') || '';
+    const type = prompt('Type? (billing / shipping / both)', 'both') || 'both';
+    const line1 = prompt('Line 1?') || '';
+    const line2 = prompt('Line 2? (optional)') || '';
+    const city = prompt('City?') || '';
+    const county = prompt('County? (optional)') || '';
+    const postcode = prompt('Postcode?') || '';
+    const country = prompt('Country (ISO code, e.g. GB)?', 'GB') || 'GB';
+    const isDefault = confirm('Set as default address?');
+    const r = await fetch('/api/customers/' + id + '/addresses', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label, type, line1, line2, city, county, postcode, country, is_default: isDefault })
+    });
+    const d = await r.json();
+    if (!d.ok) { setStatus('Add failed: ' + d.error, 'err'); return; }
+    loadCustomer();
+  });
+
+  addressesEl.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const aid = btn.dataset.aid;
+    if (btn.dataset.action === 'del-address') {
+      if (!confirm('Delete this address?')) return;
+      const r = await fetch('/api/customers/' + id + '/addresses/' + aid, { method: 'DELETE' });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Delete failed: ' + d.error, 'err'); return; }
+      loadCustomer();
+    } else if (btn.dataset.action === 'edit-address') {
+      const label = prompt('Label?') || '';
+      const type = prompt('Type? (billing / shipping / both)', 'both') || 'both';
+      const line1 = prompt('Line 1?') || '';
+      const line2 = prompt('Line 2?') || '';
+      const city = prompt('City?') || '';
+      const county = prompt('County?') || '';
+      const postcode = prompt('Postcode?') || '';
+      const country = prompt('Country (ISO code)?', 'GB') || 'GB';
+      const isDefault = confirm('Set as default?');
+      const r = await fetch('/api/customers/' + id + '/addresses/' + aid, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label, type, line1, line2, city, county, postcode, country, is_default: isDefault })
+      });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Update failed: ' + d.error, 'err'); return; }
+      loadCustomer();
+    }
+  });
+
+  loadCustomer();
+</script>
+
+</body>
+</html>

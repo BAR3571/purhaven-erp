@@ -37,7 +37,59 @@ const MIGRATIONS = [
   )`,
 
   `CREATE INDEX IF NOT EXISTS erp_audit_entity_idx ON erp_audit_log(entity_type, entity_id)`,
-  `CREATE INDEX IF NOT EXISTS erp_audit_created_idx ON erp_audit_log(created_at DESC)`
+  `CREATE INDEX IF NOT EXISTS erp_audit_created_idx ON erp_audit_log(created_at DESC)`,
+
+  // ---------- Customers (Phase 1 · Task #45) ----------
+  `CREATE TABLE IF NOT EXISTS erp_customers (
+    id SERIAL PRIMARY KEY,
+    account_code TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    vat_number TEXT,
+    eori_number TEXT,
+    currency TEXT NOT NULL DEFAULT 'GBP',
+    payment_terms TEXT,
+    credit_limit_pence INTEGER,
+    credit_hold BOOLEAN NOT NULL DEFAULT FALSE,
+    notes TEXT,
+    xero_contact_id TEXT,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by INTEGER REFERENCES erp_users(id)
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_customers_active_idx ON erp_customers(active)`,
+  `CREATE INDEX IF NOT EXISTS erp_customers_name_idx ON erp_customers(LOWER(name))`,
+
+  `CREATE TABLE IF NOT EXISTS erp_customer_contacts (
+    id SERIAL PRIMARY KEY,
+    customer_id INTEGER NOT NULL REFERENCES erp_customers(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    position TEXT,
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_customer_contacts_cust_idx ON erp_customer_contacts(customer_id)`,
+
+  `CREATE TABLE IF NOT EXISTS erp_customer_addresses (
+    id SERIAL PRIMARY KEY,
+    customer_id INTEGER NOT NULL REFERENCES erp_customers(id) ON DELETE CASCADE,
+    label TEXT,
+    type TEXT NOT NULL DEFAULT 'both' CHECK (type IN ('billing','shipping','both')),
+    line1 TEXT,
+    line2 TEXT,
+    city TEXT,
+    county TEXT,
+    postcode TEXT,
+    country TEXT NOT NULL DEFAULT 'GB',
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS erp_customer_addresses_cust_idx ON erp_customer_addresses(customer_id)`
 ];
 
 export default async function handler(req, res) {
