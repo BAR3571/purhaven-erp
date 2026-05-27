@@ -1,25 +1,26 @@
 :root {
-  --bg: #dde3eb;
-  --bg-2: #e6eaf1;
-  --surface: #f0f3f7;
-  --surface-2: #e3e8ee;
-  --border: #c5ccd5;
-  --border-soft: #d8dee5;
-  --ink: #1e293b;
-  --ink-soft: #475569;
-  --ink-dim: #64748b;
+  /* Matches purhaven.co.uk — paper/breath/mist palette */
+  --bg: #f4f9fb;          /* breath — cool off-white page */
+  --bg-2: #e8f1f5;        /* mist — topbar */
+  --surface: #fdfbf7;     /* paper — warm cream card */
+  --surface-2: #f4f9fb;   /* breath — subcards */
+  --border: #c8dde6;      /* mist-deep */
+  --border-soft: #dce8ee;
+  --ink: #0a1f2e;         /* deep teal ink */
+  --ink-soft: #2a4456;
+  --ink-dim: #5a7280;
 
-  --sky: #0284c7;
-  --sky-deep: #0369a1;
-  --orange: #d97706;
-  --green: #16a34a;
-  --red: #dc2626;
-  --purple: #7c3aed;
-  --pink: #db2777;
+  --sky: #4a9bb8;
+  --sky-deep: #2c6e85;
+  --orange: #d97757;      /* pulse terracotta */
+  --green: #2f8f5e;
+  --red: #c0392b;
+  --purple: #7c5a9f;
+  --pink: #c4548f;
 
   --radius: 10px;
   --radius-sm: 6px;
-  --shadow: 0 2px 12px rgba(30,41,59,0.08);
+  --shadow: 0 2px 14px rgba(10,31,46,0.07);
 
   --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
