@@ -482,7 +482,34 @@ const MIGRATIONS = [
   // Pick-list -> despatch flow: capture package dims + packaging notes during picking,
   // carrier+tracking become required for the final despatch confirmation step
   `ALTER TABLE erp_despatches ADD COLUMN IF NOT EXISTS package_dims_cm TEXT`,
-  `ALTER TABLE erp_despatches ADD COLUMN IF NOT EXISTS packaging_notes TEXT`
+  `ALTER TABLE erp_despatches ADD COLUMN IF NOT EXISTS packaging_notes TEXT`,
+
+  // ---------- Parcels (Phase 1 · Task #52c) ----------
+  `CREATE TABLE IF NOT EXISTS erp_parcels (
+    id SERIAL PRIMARY KEY,
+    despatch_id INTEGER NOT NULL REFERENCES erp_despatches(id) ON DELETE CASCADE,
+    parcel_no INTEGER NOT NULL,
+    label TEXT,
+    pallet_label TEXT,
+    weight_kg NUMERIC(10,3),
+    length_cm INTEGER,
+    width_cm INTEGER,
+    height_cm INTEGER,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (despatch_id, parcel_no)
+  )`,
+  `CREATE INDEX IF NOT EXISTS erp_parcels_despatch_idx ON erp_parcels(despatch_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_parcels_pallet_idx ON erp_parcels(pallet_label)`,
+
+  `CREATE TABLE IF NOT EXISTS erp_parcel_items (
+    id SERIAL PRIMARY KEY,
+    parcel_id INTEGER NOT NULL REFERENCES erp_parcels(id) ON DELETE CASCADE,
+    despatch_line_id INTEGER NOT NULL REFERENCES erp_despatch_lines(id) ON DELETE CASCADE,
+    qty INTEGER NOT NULL CHECK (qty > 0)
+  )`,
+  `CREATE INDEX IF NOT EXISTS erp_parcel_items_parcel_idx ON erp_parcel_items(parcel_id)`,
+  `CREATE INDEX IF NOT EXISTS erp_parcel_items_line_idx ON erp_parcel_items(despatch_line_id)`
 ];
 
 export default async function handler(req, res) {

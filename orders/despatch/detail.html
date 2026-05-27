@@ -85,6 +85,18 @@
   </div>
 </div>
 
+<div class="card accent-green" id="parcels-card" style="display:none;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <h2 style="margin:0;">Parcels</h2>
+    <div style="display:flex;gap:6px;">
+      <button type="button" class="btn btn-ghost" id="add-parcel">+ Add parcel</button>
+      <button type="button" class="btn btn-primary" id="save-parcels">Save parcels</button>
+    </div>
+  </div>
+  <p style="color:var(--ink-soft);font-size:0.82rem;margin:0 0 10px;">Allocate picked items into physical boxes. Drives the per-box commercial invoice and parcel labels.</p>
+  <div id="parcels"></div>
+</div>
+
 <div class="card accent-purple">
   <h2 style="margin-top:0">Lines</h2>
   <div class="table-wrap">
@@ -153,6 +165,8 @@
     if (['packed','despatched'].includes(dn.status)) {
       buttons.push(`<a class="btn btn-ghost" href="/api/despatches/${dn.id}/paperwork/packing-list" target="_blank" rel="noopener">📦 Packing list</a>`);
       buttons.push(`<a class="btn btn-ghost" href="/api/despatches/${dn.id}/paperwork/commercial-invoice" target="_blank" rel="noopener">💷 Commercial invoice</a>`);
+      buttons.push(`<a class="btn btn-ghost" href="/api/despatches/${dn.id}/paperwork/ci-per-box" target="_blank" rel="noopener">📦💷 CI per box</a>`);
+      buttons.push(`<a class="btn btn-ghost" href="/api/despatches/${dn.id}/paperwork/parcel-labels" target="_blank" rel="noopener">🏷️ Parcel labels</a>`);
     }
     if (dn.status === 'despatched') {
       buttons.push(`<a class="btn btn-ghost" href="/api/despatches/${dn.id}/paperwork/despatch-note" target="_blank" rel="noopener">📄 Despatch note</a>`);
@@ -237,6 +251,7 @@
     fillHeader(currentDn);
     fillActions(currentDn);
     renderLines(currentDn);
+    renderParcels(currentDn);
   }
 
   document.getElementById('dn-form').addEventListener('submit', async (e) => {
@@ -339,6 +354,161 @@
     });
     const d = await r.json();
     if (!d.ok) { setStatus('Action failed: ' + d.error, 'err'); return; }
+    load();
+  });
+
+  // ===== Parcels =====
+  const parcelsCard = document.getElementById('parcels-card');
+  const parcelsEl = document.getElementById('parcels');
+  let workingParcels = [];
+
+  function renderParcels(dn) {
+    if (!['picking','packed','despatched'].includes(dn.status)) {
+      parcelsCard.style.display = 'none';
+      return;
+    }
+    parcelsCard.style.display = 'block';
+    // Seed from existing parcels, or auto-build one parcel with all picked items
+    if (dn.parcels && dn.parcels.length > 0) {
+      workingParcels = dn.parcels.map(p => ({
+        parcel_no: p.parcel_no,
+        label: p.label || `Box ${p.parcel_no}`,
+        pallet_label: p.pallet_label || '',
+        weight_kg: p.weight_kg || '',
+        length_cm: p.length_cm || '',
+        width_cm: p.width_cm || '',
+        height_cm: p.height_cm || '',
+        notes: p.notes || '',
+        items: (p.items || []).map(it => ({ despatch_line_id: it.despatch_line_id, qty: it.qty }))
+      }));
+    } else {
+      workingParcels = [{
+        parcel_no: 1,
+        label: 'Box 1',
+        pallet_label: '',
+        weight_kg: dn.weight_kg || '',
+        length_cm: '', width_cm: '', height_cm: '', notes: '',
+        items: dn.lines.map(l => ({
+          despatch_line_id: l.id,
+          qty: l.qty_picked > 0 ? l.qty_picked : l.qty_to_despatch
+        })).filter(it => it.qty > 0)
+      }];
+    }
+    drawParcels();
+  }
+
+  function drawParcels() {
+    const editable = !['despatched','cancelled'].includes(currentDn.status);
+    const lineSummary = currentDn.lines.map(l => {
+      const picked = l.qty_picked > 0 ? l.qty_picked : l.qty_to_despatch;
+      const used = workingParcels.reduce((acc, p) => acc + p.items.filter(it => it.despatch_line_id === l.id).reduce((s, it) => s + (parseInt(it.qty, 10) || 0), 0), 0);
+      return { ...l, picked, used, remaining: picked - used };
+    });
+
+    parcelsEl.innerHTML = workingParcels.map((p, idx) => {
+      const itemRows = lineSummary.map(l => {
+        const cur = p.items.find(it => it.despatch_line_id === l.id);
+        const qty = cur ? cur.qty : 0;
+        const max = qty + l.remaining;
+        return `
+          <tr>
+            <td class="mono">${(l.sku||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</td>
+            <td>${(l.description||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</td>
+            <td style="text-align:right;color:var(--ink-dim);">${l.picked}</td>
+            <td style="text-align:right">
+              ${editable
+                ? `<input class="num parcel-item-qty" type="number" min="0" max="${max}" value="${qty}" data-pidx="${idx}" data-dnl="${l.id}" style="width:60px;text-align:right;">`
+                : `<strong>${qty}</strong>`}
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      return `
+        <div class="subcard" data-pidx="${idx}" style="margin-bottom:14px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:10px;">
+            <div class="field" style="margin:0;"><label>Label</label><input type="text" data-f="label" value="${(p.label||'').replace(/"/g,'&quot;')}" ${editable?'':'readonly'}></div>
+            <div class="field" style="margin:0;"><label>Pallet</label><input type="text" data-f="pallet_label" value="${(p.pallet_label||'').replace(/"/g,'&quot;')}" ${editable?'':'readonly'}></div>
+            <div class="field" style="margin:0;"><label>Weight kg</label><input type="number" step="0.01" min="0" data-f="weight_kg" value="${p.weight_kg||''}" ${editable?'':'readonly'}></div>
+            <div class="field" style="margin:0;"><label>L cm</label><input type="number" min="0" data-f="length_cm" value="${p.length_cm||''}" ${editable?'':'readonly'}></div>
+            <div class="field" style="margin:0;"><label>W cm</label><input type="number" min="0" data-f="width_cm" value="${p.width_cm||''}" ${editable?'':'readonly'}></div>
+            <div class="field" style="margin:0;"><label>H cm</label><input type="number" min="0" data-f="height_cm" value="${p.height_cm||''}" ${editable?'':'readonly'}></div>
+            <div>${editable && workingParcels.length > 1 ? `<button type="button" class="btn btn-danger" data-act="del-parcel" data-pidx="${idx}">×</button>` : ''}</div>
+          </div>
+          <table class="data" style="margin-top:6px;">
+            <thead><tr><th>SKU</th><th>Description</th><th style="text-align:right">Picked</th><th style="text-align:right">In this box</th></tr></thead>
+            <tbody>${itemRows}</tbody>
+          </table>
+        </div>
+      `;
+    }).join('') + `
+      <div style="color:var(--ink-soft);font-size:0.82rem;margin-top:6px;">
+        ${lineSummary.map(l => `${l.sku}: ${l.used}/${l.picked} in parcels${l.remaining > 0 ? ' · <span style="color:#92400e;">' + l.remaining + ' unpacked</span>' : ''}`).join(' &nbsp;·&nbsp; ')}
+      </div>
+    `;
+  }
+
+  parcelsEl.addEventListener('input', (e) => {
+    const inp = e.target;
+    if (inp.classList.contains('parcel-item-qty')) {
+      const pidx = parseInt(inp.dataset.pidx, 10);
+      const dnl = parseInt(inp.dataset.dnl, 10);
+      const qty = parseInt(inp.value, 10) || 0;
+      const parcel = workingParcels[pidx];
+      const existing = parcel.items.find(it => it.despatch_line_id === dnl);
+      if (qty === 0) {
+        parcel.items = parcel.items.filter(it => it.despatch_line_id !== dnl);
+      } else if (existing) {
+        existing.qty = qty;
+      } else {
+        parcel.items.push({ despatch_line_id: dnl, qty });
+      }
+      drawParcels();
+      return;
+    }
+    if (inp.dataset.f) {
+      const card = inp.closest('[data-pidx]');
+      const pidx = parseInt(card.dataset.pidx, 10);
+      workingParcels[pidx][inp.dataset.f] = inp.value;
+    }
+  });
+
+  parcelsEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-act="del-parcel"]');
+    if (!btn) return;
+    const pidx = parseInt(btn.dataset.pidx, 10);
+    workingParcels.splice(pidx, 1);
+    workingParcels.forEach((p, i) => p.parcel_no = i + 1);
+    drawParcels();
+  });
+
+  document.getElementById('add-parcel').addEventListener('click', () => {
+    workingParcels.push({
+      parcel_no: workingParcels.length + 1,
+      label: `Box ${workingParcels.length + 1}`,
+      pallet_label: '', weight_kg: '', length_cm: '', width_cm: '', height_cm: '', notes: '',
+      items: []
+    });
+    drawParcels();
+  });
+
+  document.getElementById('save-parcels').addEventListener('click', async () => {
+    const r = await fetch(`/api/despatches/${id}/parcels`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        parcels: workingParcels.map((p, i) => ({
+          parcel_no: i + 1, label: p.label || `Box ${i + 1}`,
+          pallet_label: p.pallet_label || null,
+          weight_kg: p.weight_kg || null,
+          length_cm: p.length_cm || null, width_cm: p.width_cm || null, height_cm: p.height_cm || null,
+          notes: p.notes || null,
+          items: p.items.filter(it => parseInt(it.qty, 10) > 0)
+        }))
+      })
+    });
+    const d = await r.json();
+    if (!d.ok) { setStatus('Save failed: ' + d.error, 'err'); return; }
+    setStatus(`Saved ${d.parcels.length} parcel${d.parcels.length === 1 ? '' : 's'}.`, 'ok');
     load();
   });
 
