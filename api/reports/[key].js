@@ -197,6 +197,129 @@ const REPORTS = {
     `
   },
 
+  'margin-by-order': {
+    label: 'Margin by order',
+    description: 'Revenue, cost of goods sold (using each product\'s current cost price) and gross margin per sales order. Excludes draft and cancelled orders.',
+    columns: [
+      ['SO #',       r => r.so_number],
+      ['Customer',   r => r.customer_name],
+      ['Order date', r => fmtDate(r.order_date)],
+      ['Revenue',    r => money(r.revenue)],
+      ['COGS',       r => money(r.cogs)],
+      ['Margin',     r => money(r.margin)],
+      ['Margin %',   r => {
+        const rev = Number(r.revenue);
+        return rev > 0 ? (Number(r.margin) / rev * 100).toFixed(1) + '%' : '—';
+      }]
+    ],
+    fetch: async ({ from, to }) => sql`
+      WITH line_costs AS (
+        SELECT
+          so.id AS so_id,
+          so.so_number,
+          so.order_date,
+          c.name AS customer_name,
+          sol.quantity_ordered AS qty,
+          sol.unit_price_pence AS unit_price,
+          sol.discount_percent AS discount,
+          COALESCE(p.cost_price_pence, 0) AS unit_cost
+        FROM erp_sales_orders so
+        JOIN erp_customers c ON c.id = so.customer_id
+        JOIN erp_sales_order_lines sol ON sol.so_id = so.id
+        LEFT JOIN erp_products p ON p.id = sol.product_id
+        WHERE so.status NOT IN ('draft', 'cancelled')
+          AND (${from}::date IS NULL OR so.order_date >= ${from})
+          AND (${to}::date IS NULL OR so.order_date <= ${to})
+      )
+      SELECT
+        so_id, so_number, customer_name, order_date,
+        COALESCE(SUM(qty * unit_price * (1 - discount / 100)), 0)::bigint AS revenue,
+        COALESCE(SUM(qty * unit_cost), 0)::bigint AS cogs,
+        COALESCE(SUM(qty * unit_price * (1 - discount / 100)) - SUM(qty * unit_cost), 0)::bigint AS margin
+      FROM line_costs
+      GROUP BY so_id, so_number, customer_name, order_date
+      ORDER BY order_date DESC, so_number DESC
+    `
+  },
+
+  'stock-valuation': {
+    label: 'Stock valuation',
+    description: 'Total value of current stock on hand using each product\'s cost price. Excludes archived SKUs and rows with zero stock and zero cost.',
+    columns: [
+      ['SKU',          r => r.sku],
+      ['Name',         r => r.name],
+      ['Brand',        r => r.brand],
+      ['On hand',      r => Number(r.on_hand)],
+      ['Allocated',    r => Number(r.allocated)],
+      ['Unit cost',    r => money(r.unit_cost)],
+      ['Total value',  r => money(r.total_value)]
+    ],
+    fetch: async () => sql`
+      SELECT p.sku, p.name, p.brand,
+             COALESCE(SUM(sl.qty_on_hand), 0) AS on_hand,
+             COALESCE(SUM(sl.qty_allocated), 0) AS allocated,
+             COALESCE(p.cost_price_pence, 0) AS unit_cost,
+             (COALESCE(SUM(sl.qty_on_hand), 0) * COALESCE(p.cost_price_pence, 0))::bigint AS total_value
+      FROM erp_products p
+      LEFT JOIN erp_stock_levels sl ON sl.product_id = p.id
+      WHERE p.active = TRUE
+      GROUP BY p.id, p.sku, p.name, p.brand, p.cost_price_pence
+      HAVING COALESCE(SUM(sl.qty_on_hand), 0) > 0
+      ORDER BY total_value DESC, p.sku ASC
+    `
+  },
+
+  'aged-stock': {
+    label: 'Aged stock',
+    description: 'Stock on hand grouped by age band. For serialised SKUs uses the oldest in-stock serial; for non-serialised, uses the earliest goods-in receipt as a conservative proxy.',
+    columns: [
+      ['SKU',            r => r.sku],
+      ['Name',           r => r.name],
+      ['On hand',        r => Number(r.on_hand)],
+      ['Oldest receipt', r => fmtDate(r.oldest_received_at)],
+      ['Days aging',     r => r.days_aging == null ? '' : Number(r.days_aging)],
+      ['Bucket',         r => r.bucket],
+      ['Value',          r => money(r.value)]
+    ],
+    fetch: async () => sql`
+      WITH per_product AS (
+        SELECT
+          p.id, p.sku, p.name, p.requires_serial,
+          COALESCE(SUM(sl.qty_on_hand), 0) AS on_hand,
+          COALESCE(p.cost_price_pence, 0) AS unit_cost,
+          CASE
+            WHEN p.requires_serial THEN
+              (SELECT MIN(received_at) FROM erp_product_serials s
+               WHERE s.product_id = p.id AND s.status = 'in_stock')
+            ELSE
+              (SELECT MIN(gi.received_at) FROM erp_goods_in_lines gil
+               JOIN erp_goods_in gi ON gi.id = gil.gi_id
+               WHERE gil.product_id = p.id AND gil.qty_received > 0)
+          END AS oldest_received_at
+        FROM erp_products p
+        LEFT JOIN erp_stock_levels sl ON sl.product_id = p.id
+        WHERE p.active = TRUE
+        GROUP BY p.id, p.sku, p.name, p.requires_serial, p.cost_price_pence
+      )
+      SELECT sku, name, on_hand, oldest_received_at,
+             CASE
+               WHEN oldest_received_at IS NULL THEN NULL
+               ELSE (CURRENT_DATE - oldest_received_at::date)
+             END AS days_aging,
+             CASE
+               WHEN oldest_received_at IS NULL THEN 'no receipts'
+               WHEN (CURRENT_DATE - oldest_received_at::date) <= 30 THEN '0-30 days'
+               WHEN (CURRENT_DATE - oldest_received_at::date) <= 60 THEN '31-60 days'
+               WHEN (CURRENT_DATE - oldest_received_at::date) <= 90 THEN '61-90 days'
+               ELSE '91+ days'
+             END AS bucket,
+             (on_hand * unit_cost)::bigint AS value
+      FROM per_product
+      WHERE on_hand > 0
+      ORDER BY oldest_received_at ASC NULLS LAST
+    `
+  },
+
   'service-due': {
     label: 'Service due',
     description: 'Serialised units in the field whose service_due_at falls within the next 90 days (or already overdue).',
