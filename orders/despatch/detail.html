@@ -148,6 +148,15 @@
       sub += ` · ✉ emailed ${new Date(dn.despatch_email_sent_at).toLocaleString('en-GB')}${dn.despatch_email_to ? ' to ' + dn.despatch_email_to : ''}`;
     }
     subtitleEl.textContent = sub;
+    if (dn.onedrive_folder_url) {
+      const folderLink = document.createElement('a');
+      folderLink.href = dn.onedrive_folder_url;
+      folderLink.target = '_blank'; folderLink.rel = 'noopener';
+      folderLink.textContent = '📁 Open OneDrive folder';
+      folderLink.style.cssText = 'margin-left:8px;font-size:0.82rem;';
+      subtitleEl.appendChild(document.createTextNode(' · '));
+      subtitleEl.appendChild(folderLink);
+    }
     document.getElementById('f-carrier').value  = dn.carrier || '';
     document.getElementById('f-tracking').value = dn.tracking_number || '';
     document.getElementById('f-weight').value   = dn.weight_kg ?? '';
@@ -176,6 +185,8 @@
       buttons.push(`<a class="btn btn-ghost" href="/api/despatches/${dn.id}/paperwork/despatch-note" target="_blank" rel="noopener">📄 Despatch note</a>`);
       const emailLabel = dn.despatch_email_sent_at ? '✉ Resend despatch email' : '✉ Send despatch email';
       buttons.push(`<button type="button" class="btn btn-ghost" data-act="send-email">${emailLabel}</button>`);
+      const archiveLabel = dn.documents_archived_at ? '📁 Re-archive to OneDrive' : '📁 Archive to OneDrive';
+      buttons.push(`<button type="button" class="btn btn-ghost" data-act="archive">${archiveLabel}</button>`);
     }
     if (dn.status === 'pending') buttons.push(`<button type="button" class="btn btn-primary" data-act="start-picking">▶ Start picking</button>`);
     if (dn.status === 'picking') buttons.push(`<button type="button" class="btn btn-primary" data-act="confirm-picking">✓ Confirm pick &amp; packaging</button>`);
@@ -362,6 +373,19 @@
       const d = await r.json();
       if (!d.ok) { setStatus('Email failed: ' + d.error, 'err'); return; }
       setStatus('Email sent to ' + d.sent_to + '.', 'ok');
+      load();
+      return;
+    }
+
+    if (act === 'archive') {
+      setStatus('Archiving to OneDrive…', 'ok');
+      const r = await fetch('/api/despatches/' + id + '/archive-to-onedrive', { method: 'POST' });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Archive failed: ' + d.error, 'err'); return; }
+      const errs = (d.errors || []).length;
+      const msg = `Archived ${d.files.length} file${d.files.length === 1 ? '' : 's'} to OneDrive` +
+                  (errs ? ` (${errs} failed)` : '') + '.';
+      setStatus(msg, errs ? 'err' : 'ok');
       load();
       return;
     }

@@ -1,22 +1,17 @@
 import { sql } from '../../../../lib/db.js';
 import { requireUser } from '../../../../lib/session.js';
 import { getDespatchWithRelations } from '../../../../lib/despatch.js';
-import { newDoc, writeAddressBlock, writeKv, sendPdf, applyPageFooter, colors } from '../../../../lib/pdf.js';
+import { newDoc, writeAddressBlock, writeKv, sendPdf, docToBuffer, applyPageFooter, colors } from '../../../../lib/pdf.js';
 
-export default async function handler(req, res) {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+export async function renderPackingListBuffer(despatchId) {
+  const dn = await getDespatchWithRelations(despatchId);
+  if (!dn) return { buffer: null, dn: null };
+  const doc = await buildDoc(dn);
+  const buffer = await docToBuffer(doc);
+  return { buffer, dn };
+}
 
-  const id = parseInt(req.query.id, 10);
-  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
-
-  const dn = await getDespatchWithRelations(id);
-  if (!dn) return res.status(404).json({ error: 'Despatch not found' });
-
+async function buildDoc(dn) {
   const doc = newDoc({ title: `Packing List · ${dn.despatch_number}` });
 
   // Meta + ship-to
@@ -81,5 +76,21 @@ export default async function handler(req, res) {
   }
 
   applyPageFooter(doc, { dnNumber: dn.despatch_number });
-  return sendPdf(doc, res, `packing-list-${dn.despatch_number}.pdf`);
+  return doc;
+}
+
+export default async function handler(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+  const id = parseInt(req.query.id, 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
+  const { buffer, dn } = await renderPackingListBuffer(id);
+  if (!buffer) return res.status(404).json({ error: 'Despatch not found' });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="packing-list-${dn.despatch_number}.pdf"`);
+  return res.send(buffer);
 }

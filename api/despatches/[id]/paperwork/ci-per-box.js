@@ -1,7 +1,7 @@
 import { sql } from '../../../../lib/db.js';
 import { requireUser } from '../../../../lib/session.js';
 import { getDespatchWithRelations } from '../../../../lib/despatch.js';
-import { newDoc, drawLogoMark, writeAddressBlock, writeKv, sendPdf, applyPageFooter, colors, company } from '../../../../lib/pdf.js';
+import { newDoc, drawLogoMark, writeAddressBlock, writeKv, sendPdf, docToBuffer, applyPageFooter, colors, company } from '../../../../lib/pdf.js';
 
 function money(pence, currency = 'GBP') {
   if (pence == null) return '—';
@@ -11,19 +11,16 @@ function money(pence, currency = 'GBP') {
 // Per-box (per-parcel) commercial invoice. Generates one A4 page per parcel.
 // If no parcels are defined yet, falls back to a single page with all items.
 
-export default async function handler(req, res) {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+export async function renderCiPerBoxBuffer(despatchId) {
+  const dn = await getDespatchWithRelations(despatchId);
+  if (!dn) return { buffer: null, dn: null };
+  const doc = await buildDoc(dn);
+  const buffer = await docToBuffer(doc);
+  return { buffer, dn };
+}
 
-  const id = parseInt(req.query.id, 10);
-  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
-
-  const dn = await getDespatchWithRelations(id);
-  if (!dn) return res.status(404).json({ error: 'Despatch not found' });
+async function buildDoc(dn) {
+  const id = dn.id;
 
   // Enrich lines with price + HS data the same way commercial-invoice.js does
   const enriched = dn.lines.length === 0 ? [] : await sql`
@@ -76,7 +73,23 @@ export default async function handler(req, res) {
   });
 
   applyPageFooter(doc, { dnNumber: dn.despatch_number });
-  return sendPdf(doc, res, `ci-per-box-${dn.despatch_number}.pdf`);
+  return doc;
+}
+
+export default async function handler(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+  const id = parseInt(req.query.id, 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
+  const { buffer, dn } = await renderCiPerBoxBuffer(id);
+  if (!buffer) return res.status(404).json({ error: 'Despatch not found' });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="ci-per-box-${dn.despatch_number}.pdf"`);
+  return res.send(buffer);
 }
 
 function drawHeader(doc, title) {

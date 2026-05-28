@@ -1,23 +1,19 @@
 import { requireUser } from '../../../../lib/session.js';
 import { getDespatchWithRelations } from '../../../../lib/despatch.js';
-import { newDoc, drawLogoMark, writeAddressBlock, sendPdf, applyPageFooter, colors, company } from '../../../../lib/pdf.js';
+import { newDoc, drawLogoMark, writeAddressBlock, sendPdf, docToBuffer, applyPageFooter, colors, company } from '../../../../lib/pdf.js';
 
 // One A6-ish label per parcel (4 per A4 page, 2x2 grid).
 // If no parcels defined, generates one label for the whole despatch.
 
-export default async function handler(req, res) {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+export async function renderParcelLabelsBuffer(despatchId) {
+  const dn = await getDespatchWithRelations(despatchId);
+  if (!dn) return { buffer: null, dn: null };
+  const doc = await buildDoc(dn);
+  const buffer = await docToBuffer(doc);
+  return { buffer, dn };
+}
 
-  const id = parseInt(req.query.id, 10);
-  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
-
-  const dn = await getDespatchWithRelations(id);
-  if (!dn) return res.status(404).json({ error: 'Despatch not found' });
+async function buildDoc(dn) {
 
   const parcels = (dn.parcels && dn.parcels.length > 0) ? dn.parcels : [
     { parcel_no: 1, label: 'Parcel 1 of 1', pallet_label: null, weight_kg: dn.weight_kg }
@@ -43,7 +39,23 @@ export default async function handler(req, res) {
   });
 
   applyPageFooter(doc, { dnNumber: dn.despatch_number });
-  return sendPdf(doc, res, `parcel-labels-${dn.despatch_number}.pdf`);
+  return doc;
+}
+
+export default async function handler(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+  const id = parseInt(req.query.id, 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
+  const { buffer, dn } = await renderParcelLabelsBuffer(id);
+  if (!buffer) return res.status(404).json({ error: 'Despatch not found' });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="parcel-labels-${dn.despatch_number}.pdf"`);
+  return res.send(buffer);
 }
 
 function renderLabel(doc, dn, parcel, num, total, x, y, w, h) {

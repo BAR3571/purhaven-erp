@@ -3,6 +3,8 @@ import { requireUser } from '../../../lib/session.js';
 import { refreshSoFromDespatches, addMonths } from '../../../lib/despatch.js';
 import { adjustStock } from '../../../lib/stock.js';
 import { sendDespatchEmail } from '../../../lib/despatch-email.js';
+import { archiveDespatchToOneDrive } from '../../../lib/archive.js';
+import { isConfigured as onedriveConfigured } from '../../../lib/onedrive.js';
 
 // Status transitions on a despatch.
 const ALLOWED_FROM = {
@@ -210,8 +212,24 @@ export default async function handler(req, res) {
         emailResult = { error: err.message };
       }
     }
+
+    // Archive paperwork to OneDrive if configured (best effort).
+    let archiveResult = null;
+    if (b.archive !== false && onedriveConfigured()) {
+      try {
+        archiveResult = await archiveDespatchToOneDrive(id, { userId: user.id });
+      } catch (err) {
+        archiveResult = { error: err.message };
+      }
+    }
+
     const updated = await sql`SELECT status FROM erp_despatches WHERE id = ${id}`;
-    return res.status(200).json({ ok: true, status: updated[0].status, email: emailResult });
+    return res.status(200).json({
+      ok: true,
+      status: updated[0].status,
+      email: emailResult,
+      archive: archiveResult
+    });
   }
 
   else if (action === 'cancel') {

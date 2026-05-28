@@ -1,21 +1,17 @@
 import { sql } from '../../../../lib/db.js';
 import { requireUser } from '../../../../lib/session.js';
 import { getDespatchWithRelations } from '../../../../lib/despatch.js';
-import { newDoc, writeAddressBlock, writeKv, sendPdf, applyPageFooter, colors } from '../../../../lib/pdf.js';
+import { newDoc, writeAddressBlock, writeKv, sendPdf, docToBuffer, applyPageFooter, colors } from '../../../../lib/pdf.js';
 
-export default async function handler(req, res) {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+export async function renderPickingNoteBuffer(despatchId) {
+  const dn = await getDespatchWithRelations(despatchId);
+  if (!dn) return { buffer: null, dn: null };
+  const doc = await buildDoc(dn);
+  const buffer = await docToBuffer(doc);
+  return { buffer, dn };
+}
 
-  const id = parseInt(req.query.id, 10);
-  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
-
-  const dn = await getDespatchWithRelations(id);
-  if (!dn) return res.status(404).json({ error: 'Despatch not found' });
+async function buildDoc(dn) {
 
   // Find in-stock candidate serials per product line so the picker has a list to pick from
   const productIds = dn.lines.map(l => l.product_id).filter(Boolean);
@@ -142,5 +138,21 @@ export default async function handler(req, res) {
   doc.moveTo(440, sigY + 28).lineTo(548, sigY + 28).strokeColor(colors.LINE).stroke();
 
   applyPageFooter(doc, { dnNumber: dn.despatch_number });
-  return sendPdf(doc, res, `picking-note-${dn.despatch_number}.pdf`);
+  return doc;
+}
+
+export default async function handler(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+  const id = parseInt(req.query.id, 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
+  const { buffer, dn } = await renderPickingNoteBuffer(id);
+  if (!buffer) return res.status(404).json({ error: 'Despatch not found' });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="picking-note-${dn.despatch_number}.pdf"`);
+  return res.send(buffer);
 }

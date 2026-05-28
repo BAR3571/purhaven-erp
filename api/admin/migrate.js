@@ -513,7 +513,26 @@ const MIGRATIONS = [
 
   // ---------- Despatch email tracking (Phase 1 · Task #52d) ----------
   `ALTER TABLE erp_despatches ADD COLUMN IF NOT EXISTS despatch_email_sent_at TIMESTAMPTZ`,
-  `ALTER TABLE erp_despatches ADD COLUMN IF NOT EXISTS despatch_email_to TEXT`
+  `ALTER TABLE erp_despatches ADD COLUMN IF NOT EXISTS despatch_email_to TEXT`,
+
+  // ---------- OneDrive archive (Phase 1 · Task #53) ----------
+  `ALTER TABLE erp_despatches ADD COLUMN IF NOT EXISTS onedrive_folder_url TEXT`,
+  `ALTER TABLE erp_despatches ADD COLUMN IF NOT EXISTS documents_archived_at TIMESTAMPTZ`,
+
+  `CREATE TABLE IF NOT EXISTS erp_archived_documents (
+    id BIGSERIAL PRIMARY KEY,
+    entity_type TEXT NOT NULL,
+    entity_id INTEGER NOT NULL,
+    doc_type TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    onedrive_id TEXT,
+    onedrive_web_url TEXT,
+    onedrive_path TEXT,
+    size_bytes INTEGER,
+    archived_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    archived_by INTEGER REFERENCES erp_users(id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS erp_archived_docs_entity_idx ON erp_archived_documents(entity_type, entity_id)`
 ];
 
 export default async function handler(req, res) {
