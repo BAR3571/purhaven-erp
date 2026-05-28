@@ -532,7 +532,28 @@ const MIGRATIONS = [
     archived_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     archived_by INTEGER REFERENCES erp_users(id)
   )`,
-  `CREATE INDEX IF NOT EXISTS erp_archived_docs_entity_idx ON erp_archived_documents(entity_type, entity_id)`
+  `CREATE INDEX IF NOT EXISTS erp_archived_docs_entity_idx ON erp_archived_documents(entity_type, entity_id)`,
+
+  // ---------- Xero integration (Phase 3 · Task #57) ----------
+  // Singleton row (id=1) holding the long-lived OAuth tokens for the
+  // connected Xero tenant. Refreshed automatically by lib/xero.js.
+  `CREATE TABLE IF NOT EXISTS erp_xero_tokens (
+    id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    tenant_id TEXT NOT NULL,
+    tenant_name TEXT,
+    access_token TEXT NOT NULL,
+    refresh_token TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    scope TEXT,
+    connected_by INTEGER REFERENCES erp_users(id),
+    connected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  // Stamp on the despatch itself so the manual "push to Xero" button
+  // can show status and avoid duplicate invoices.
+  `ALTER TABLE erp_despatches ADD COLUMN IF NOT EXISTS xero_invoice_id TEXT`,
+  `ALTER TABLE erp_despatches ADD COLUMN IF NOT EXISTS xero_pushed_at TIMESTAMPTZ`
 ];
 
 export default async function handler(req, res) {

@@ -193,6 +193,11 @@
       buttons.push(`<button type="button" class="btn btn-ghost" data-act="send-email">${emailLabel}</button>`);
       const archiveLabel = dn.documents_archived_at ? '📁 Re-archive to OneDrive' : '📁 Archive to OneDrive';
       buttons.push(`<button type="button" class="btn btn-ghost" data-act="archive">${archiveLabel}</button>`);
+      if (dn.xero_invoice_id) {
+        buttons.push(`<button type="button" class="btn btn-ghost" data-act="xero" title="Already pushed (${dn.xero_invoice_id.slice(0,8)}…)">💼 Pushed to Xero ✓</button>`);
+      } else {
+        buttons.push(`<button type="button" class="btn btn-ghost" data-act="xero">💼 Push to Xero</button>`);
+      }
     }
     if (dn.status === 'pending') buttons.push(`<button type="button" class="btn btn-primary" data-act="start-picking">▶ Start picking</button>`);
     if (dn.status === 'picking') buttons.push(`<button type="button" class="btn btn-primary" data-act="confirm-picking">✓ Confirm pick &amp; packaging</button>`);
@@ -457,6 +462,19 @@
       const msg = `Archived ${d.files.length} file${d.files.length === 1 ? '' : 's'} to OneDrive` +
                   (errs ? ` (${errs} failed)` : '') + '.';
       setStatus(msg, errs ? 'err' : 'ok');
+      load();
+      return;
+    }
+
+    if (act === 'xero') {
+      setStatus('Pushing invoice to Xero…', 'ok');
+      const r = await fetch('/api/despatches/' + id + '/push-to-xero', { method: 'POST' });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Xero push failed: ' + d.error, 'err'); return; }
+      const msg = d.already_pushed
+        ? `Already in Xero (${d.xero_invoice_id.slice(0,8)}…).`
+        : `Invoice pushed to Xero (${d.invoice_number || d.xero_invoice_id.slice(0,8)}…).`;
+      setStatus(msg, 'ok');
       load();
       return;
     }

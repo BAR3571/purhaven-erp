@@ -4,6 +4,11 @@ import { refreshSoFromDespatches, addMonths } from '../../../lib/despatch.js';
 import { adjustStock } from '../../../lib/stock.js';
 import { sendDespatchEmail } from '../../../lib/despatch-email.js';
 import { archiveDespatchToOneDrive } from '../../../lib/archive.js';
+import {
+  isConfigured as xeroConfigured,
+  getStoredTokens as xeroGetStoredTokens,
+  pushDespatchInvoice
+} from '../../../lib/xero.js';
 import { isConfigured as onedriveConfigured } from '../../../lib/onedrive.js';
 
 // Status transitions on a despatch.
@@ -223,12 +228,38 @@ export default async function handler(req, res) {
       }
     }
 
+    // Push sales invoice to Xero if connected (best effort, skipped if already pushed).
+    let xeroResult = null;
+    if (b.xero !== false && xeroConfigured() && await xeroGetStoredTokens()) {
+      try {
+        const [freshDn] = await sql`SELECT * FROM erp_despatches WHERE id = ${id} LIMIT 1`;
+        if (freshDn?.xero_invoice_id) {
+          xeroResult = { already_pushed: true, xero_invoice_id: freshDn.xero_invoice_id };
+        } else {
+          const [so] = await sql`SELECT * FROM erp_sales_orders WHERE id = ${dn.so_id} LIMIT 1`;
+          const [customer] = await sql`SELECT * FROM erp_customers WHERE id = ${so.customer_id} LIMIT 1`;
+          const lines = await sql`
+            SELECT dnl.sku, dnl.description, dnl.qty_to_despatch, dnl.qty_picked, dnl.qty_despatched,
+                   sol.unit_price_pence, sol.discount_percent, sol.quantity_ordered
+            FROM erp_despatch_lines dnl
+            LEFT JOIN erp_sales_order_lines sol ON sol.id = dnl.so_line_id
+            WHERE dnl.despatch_id = ${id}
+            ORDER BY dnl.id ASC
+          `;
+          xeroResult = await pushDespatchInvoice({ despatch: freshDn, so, customer, lines });
+        }
+      } catch (err) {
+        xeroResult = { error: err.message };
+      }
+    }
+
     const updated = await sql`SELECT status FROM erp_despatches WHERE id = ${id}`;
     return res.status(200).json({
       ok: true,
       status: updated[0].status,
       email: emailResult,
-      archive: archiveResult
+      archive: archiveResult,
+      xero: xeroResult
     });
   }
 
