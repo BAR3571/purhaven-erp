@@ -97,6 +97,12 @@
   <div id="parcels"></div>
 </div>
 
+<div class="card accent-green" id="scan-card" style="display:none;">
+  <h2 style="margin-top:0">Scan to pick</h2>
+  <p style="color:var(--ink-soft);font-size:0.82rem;margin:0 0 8px;">Scan a serial barcode to tick that unit. Scan a SKU on a non-serialised line to bump its picked qty by 1.</p>
+  <div id="scan-mount"></div>
+</div>
+
 <div class="card accent-purple">
   <h2 style="margin-top:0">Lines</h2>
   <div class="table-wrap">
@@ -119,7 +125,7 @@
 </div>
 
 <script type="module">
-  import { mountShell, renderOrdersTabs, fmt } from '/app.js';
+  import { mountShell, renderOrdersTabs, fmt, mountScanPanel } from '/app.js';
   await mountShell();
   document.getElementById('tabs-mount').innerHTML = `<div class="orders-tabs">${renderOrdersTabs('despatch')}</div>`;
 
@@ -250,6 +256,7 @@
   }
 
   let currentDn = null;
+  let scanCtrl = null;
   async function load() {
     const r = await fetch('/api/despatches/' + id);
     const d = await r.json();
@@ -269,6 +276,70 @@
     fillActions(currentDn);
     renderLines(currentDn);
     renderParcels(currentDn);
+    setupScan(currentDn);
+  }
+
+  function setupScan(dn) {
+    const card = document.getElementById('scan-card');
+    if (scanCtrl) { scanCtrl.destroy(); scanCtrl = null; }
+    if (dn.status !== 'picking') { card.style.display = 'none'; return; }
+    card.style.display = '';
+    const mount = document.getElementById('scan-mount');
+    mount.innerHTML = '';
+    scanCtrl = mountScanPanel(mount, {
+      label: 'Scan serial or SKU',
+      placeholder: 'Aim scanner here or type and press Enter…',
+      async onScan(value, h) {
+        const norm = value.trim();
+        if (!norm) return;
+        const rows = Array.from(document.querySelectorAll('#lines-body tr[data-dnl]'));
+
+        // 1) Exact SKU match
+        const skuRow = rows.find(r => (r.querySelector('.mono strong')?.textContent || '').trim().toUpperCase() === norm.toUpperCase());
+        if (skuRow) {
+          if (skuRow.dataset.needsSerial === '1') {
+            h.flashErr('Scan the serial barcode for ' + norm);
+            return;
+          }
+          const q = skuRow.querySelector('.qty-picked-in');
+          if (!q) { h.flashErr('Line not editable'); return; }
+          const max = parseInt(q.max, 10);
+          const cur = parseInt(q.value, 10) || 0;
+          if (Number.isFinite(max) && cur >= max) { h.flashErr('Already at qty to despatch'); return; }
+          q.value = cur + 1;
+          flashRow(skuRow);
+          h.flashOk('+1 ' + norm);
+          return;
+        }
+
+        // 2) Treat as serial — search all checkboxes
+        let matched = null;
+        for (const row of rows) {
+          const cb = row.querySelector('.serial-cb[value="' + norm.replace(/"/g, '\\"') + '"]');
+          if (cb) { matched = { row, cb }; break; }
+        }
+        if (!matched) {
+          // Case-insensitive fallback
+          for (const row of rows) {
+            const cbs = row.querySelectorAll('.serial-cb');
+            for (const cb of cbs) {
+              if (cb.value.toUpperCase() === norm.toUpperCase()) { matched = { row, cb }; break; }
+            }
+            if (matched) break;
+          }
+        }
+        if (!matched) { h.flashErr('Serial not in stock at this warehouse'); return; }
+        if (matched.cb.disabled) { h.flashErr('Serial allocated elsewhere'); return; }
+        if (matched.cb.checked) { h.flashErr('Already ticked: ' + matched.cb.value); return; }
+        matched.cb.checked = true;
+        flashRow(matched.row);
+        h.flashOk('✓ ' + matched.cb.value);
+      }
+    });
+  }
+
+  function flashRow(row) {
+    row.classList.remove('scan-hit'); void row.offsetWidth; row.classList.add('scan-hit');
   }
 
   document.getElementById('dn-form').addEventListener('submit', async (e) => {

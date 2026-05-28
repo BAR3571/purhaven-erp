@@ -178,6 +178,77 @@ export function dateOnly(iso) {
 }
 
 /**
+ * Mount a barcode-scan input panel. Works with USB/Bluetooth scanners (which type
+ * a string + Enter) and with manual typing. Returns { destroy, focus, clear }.
+ *
+ * opts:
+ *   container   — DOM element to render into (required)
+ *   label       — small heading above the input (default 'Scan')
+ *   placeholder — input placeholder (default 'Scan barcode or type and press Enter…')
+ *   onScan(value, helpers) — async callback when Enter is hit. value is the trimmed
+ *                            barcode string. helpers = { flashOk(msg?), flashErr(msg) }.
+ *                            Returning false (or throwing) auto-flashes red.
+ */
+export function mountScanPanel(container, opts = {}) {
+  const label = opts.label || 'Scan';
+  const placeholder = opts.placeholder || 'Scan barcode or type and press Enter…';
+  const wrap = document.createElement('div');
+  wrap.className = 'scan-panel';
+  wrap.innerHTML = `
+    <div class="scan-row">
+      <span class="scan-icon" aria-hidden="true">⌧</span>
+      <div class="scan-stack">
+        <label>${label}</label>
+        <input type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${placeholder}">
+      </div>
+      <div class="scan-feedback" role="status" aria-live="polite"></div>
+    </div>
+  `;
+  container.appendChild(wrap);
+
+  const input = wrap.querySelector('input');
+  const fb = wrap.querySelector('.scan-feedback');
+  let flashTimer = null;
+
+  function setFeedback(text, kind) {
+    fb.textContent = text || '';
+    fb.dataset.kind = kind || '';
+    if (flashTimer) clearTimeout(flashTimer);
+    if (text) flashTimer = setTimeout(() => { fb.textContent = ''; fb.dataset.kind = ''; }, 2500);
+  }
+
+  const helpers = {
+    flashOk: (msg) => setFeedback(msg || 'OK', 'ok'),
+    flashErr: (msg) => setFeedback(msg || 'Not recognised', 'err')
+  };
+
+  input.addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const value = input.value.trim();
+    if (!value) return;
+    input.value = '';
+    try {
+      const result = await opts.onScan?.(value, helpers);
+      if (result === false) helpers.flashErr();
+    } catch (err) {
+      helpers.flashErr(err?.message || 'Scan failed');
+    } finally {
+      input.focus();
+    }
+  });
+
+  // Auto-focus shortly after mount
+  setTimeout(() => input.focus(), 50);
+
+  return {
+    destroy: () => wrap.remove(),
+    focus: () => input.focus(),
+    clear: () => { input.value = ''; setFeedback('', ''); }
+  };
+}
+
+/**
  * Search-as-you-type product picker modal.
  * Resolves with { product, qty } when the user confirms, or null on cancel/Esc.
  * opts: { title?, confirmLabel?, defaultQty?, askQty? = true }

@@ -118,7 +118,7 @@
 </div>
 
 <script type="module">
-  import { mountShell, renderOrdersTabs, fmt, money, dateOnly, openProductPicker } from '/app.js';
+  import { mountShell, renderOrdersTabs, fmt, money, dateOnly, openProductPicker, mountScanPanel } from '/app.js';
   await mountShell();
   document.getElementById('tabs-mount').innerHTML = `<div class="orders-tabs">${renderOrdersTabs('purchase-orders')}</div>`;
 
@@ -201,6 +201,13 @@
           <textarea id="r-notes" rows="2" placeholder="Anything unusual about this delivery?"></textarea>
         </div>
 
+        <div id="r-scan-wrap" style="display:none;">
+          <div id="r-scan"></div>
+          <div style="display:flex;justify-content:flex-end;margin:-6px 0 10px;">
+            <button type="button" class="btn btn-ghost" id="r-scan-reset" style="font-size:0.78rem;padding:4px 8px;">↺ Reset qtys to 0 (scan mode)</button>
+          </div>
+        </div>
+
         <div id="r-lines"></div>
 
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
@@ -244,6 +251,75 @@ MAP-2026-0002"></textarea>
         </div>
       `;
     }).join('');
+
+    // Mount scan panel (shows up only if at least one line is open)
+    const scanWrap = backdrop.querySelector('#r-scan-wrap');
+    const scanMount = backdrop.querySelector('#r-scan');
+    if (openLines.length > 0) {
+      scanWrap.style.display = '';
+      let scanTargetPol = null;
+      mountScanPanel(scanMount, {
+        label: 'Scan SKU or serial',
+        placeholder: 'Aim scanner here or type and press Enter…',
+        async onScan(value, h) {
+          const rows = Array.from(backdrop.querySelectorAll('[data-pol]'));
+          const norm = value.trim();
+          if (!norm) return;
+
+          // 1) Exact SKU match — set as scan target and bump qty
+          const skuRow = rows.find(r => (r.querySelector('.sn')?.textContent || '').trim().toUpperCase() === norm.toUpperCase());
+          if (skuRow) {
+            scanTargetPol = skuRow.dataset.pol;
+            const ok = bumpQty(skuRow, h);
+            if (ok) {
+              flashRow(skuRow);
+              h.flashOk('SKU ' + skuRow.querySelector('.sn').textContent.trim());
+            }
+            return;
+          }
+
+          // 2) Treat value as a serial number
+          let serialRow = null;
+          if (scanTargetPol) {
+            serialRow = rows.find(r => r.dataset.pol === scanTargetPol && r.dataset.needsSerial === '1');
+          }
+          if (!serialRow) {
+            const sRows = rows.filter(r => r.dataset.needsSerial === '1');
+            if (sRows.length === 1) serialRow = sRows[0];
+          }
+          if (!serialRow) {
+            h.flashErr('Unknown — scan the SKU first to target a line');
+            return;
+          }
+          const ta = serialRow.querySelector('.serials-in');
+          const existing = ta.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+          if (existing.includes(norm)) { h.flashErr('Already scanned: ' + norm); return; }
+          if (!bumpQty(serialRow, h)) return;
+          existing.push(norm);
+          ta.value = existing.join('\n');
+          flashRow(serialRow);
+          h.flashOk('+ ' + norm);
+        }
+      });
+
+      backdrop.querySelector('#r-scan-reset').addEventListener('click', () => {
+        backdrop.querySelectorAll('.qty-in').forEach(el => el.value = '0');
+        backdrop.querySelectorAll('.serials-in').forEach(el => el.value = '');
+        scanTargetPol = null;
+      });
+    }
+
+    function bumpQty(row, h) {
+      const q = row.querySelector('.qty-in');
+      const max = parseInt(q.max, 10);
+      const cur = parseInt(q.value, 10) || 0;
+      if (Number.isFinite(max) && cur >= max) { h.flashErr('Already at remaining cap'); return false; }
+      q.value = cur + 1;
+      return true;
+    }
+    function flashRow(row) {
+      row.classList.remove('scan-hit'); void row.offsetWidth; row.classList.add('scan-hit');
+    }
 
     backdrop.querySelector('#r-submit').addEventListener('click', async () => {
       const lines = [];
