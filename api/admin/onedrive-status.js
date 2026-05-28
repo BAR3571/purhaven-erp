@@ -1,7 +1,7 @@
 import { requireUser } from '../../lib/session.js';
-import { isConfigured, getAccessToken, ensureFolder } from '../../lib/onedrive.js';
+import { isConfigured, getAccessToken, ensureFolder, getStorageMode } from '../../lib/onedrive.js';
 
-// Admin diagnostic: tests the OneDrive connection without uploading anything.
+// Admin diagnostic: tests the archive-storage connection without uploading anything.
 export default async function handler(req, res) {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -11,27 +11,39 @@ export default async function handler(req, res) {
   }
 
   if (!isConfigured()) {
+    const missing = [];
+    ['MS_GRAPH_TENANT_ID', 'MS_GRAPH_CLIENT_ID', 'MS_GRAPH_CLIENT_SECRET'].forEach(k => {
+      if (!process.env[k]) missing.push(k);
+    });
+    if (!process.env.SHAREPOINT_HOSTNAME && !process.env.ONEDRIVE_USER_UPN) {
+      missing.push('SHAREPOINT_HOSTNAME or ONEDRIVE_USER_UPN');
+    }
     return res.status(400).json({
-      ok: false,
-      configured: false,
-      missing: ['MS_GRAPH_TENANT_ID', 'MS_GRAPH_CLIENT_ID', 'MS_GRAPH_CLIENT_SECRET', 'ONEDRIVE_USER_UPN']
-        .filter(k => !process.env[k]),
-      error: 'OneDrive env vars are not all set. See README for setup.'
+      ok: false, configured: false, missing,
+      error: 'Archive storage env vars are not all set.'
     });
   }
 
+  const mode = getStorageMode();
   try {
     const token = await getAccessToken();
-    const folder = await ensureFolder('Despatches');
+    // Probe the three top-level folders we'll actually use
+    const folders = {};
+    for (const f of ['Picking Lists', 'Delivery Notes', 'Invoices']) {
+      folders[f] = await ensureFolder(f).then(x => ({ id: x.id, webUrl: x.webUrl, path: x.fullPath }));
+    }
     return res.status(200).json({
       ok: true,
       configured: true,
+      storage_mode: mode,
       token_acquired: !!token,
-      root_folder: process.env.ONEDRIVE_ROOT_FOLDER || 'PurHaven ERP',
-      user_upn: process.env.ONEDRIVE_USER_UPN,
-      despatches_folder: { id: folder.id, webUrl: folder.webUrl, path: folder.fullPath }
+      sharepoint_hostname: process.env.SHAREPOINT_HOSTNAME || null,
+      sharepoint_site_path: process.env.SHAREPOINT_SITE_PATH || null,
+      sharepoint_library: process.env.SHAREPOINT_LIBRARY || null,
+      user_upn: process.env.ONEDRIVE_USER_UPN || null,
+      folders
     });
   } catch (err) {
-    return res.status(500).json({ ok: false, configured: true, error: err.message });
+    return res.status(500).json({ ok: false, configured: true, storage_mode: mode, error: err.message });
   }
 }
