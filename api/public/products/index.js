@@ -1,8 +1,9 @@
 import { sql } from '../../../lib/db.js';
 
 // Public read-only product catalogue for the purhaven.co.uk website.
-// No auth required, but cached at the edge for 5 minutes so spikes don't
+// No auth required, but cached at the edge for 30 seconds so spikes don't
 // hammer the DB. CORS open to any origin — these prices are public anyway.
+// Append ?nocache=1 to bypass the edge cache entirely (use sparingly).
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -50,8 +51,13 @@ export default async function handler(req, res) {
     };
   });
 
-  // Edge cache for 5 minutes; allow stale-while-revalidate for 1 day
-  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=86400');
+  // Edge cache for 30 seconds; allow stale-while-revalidate for 1 day.
+  // ?nocache=1 disables caching entirely (handy for verifying ERP edits).
+  if (req.query.nocache) {
+    res.setHeader('Cache-Control', 'no-store');
+  } else {
+    res.setHeader('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=86400');
+  }
   return res.status(200).json({ ok: true, products });
 }
 
