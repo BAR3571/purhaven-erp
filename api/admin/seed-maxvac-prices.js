@@ -24,8 +24,8 @@ export default async function handler(req, res) {
 
   // Upsert the MAXVAC supplier (creates on first run, idempotent thereafter)
   const supRows = await sql`
-    INSERT INTO erp_suppliers (name, account_code, country, currency, created_by)
-    VALUES ('MAXVAC', 'MAXVAC', 'GB', 'GBP', ${user.id})
+    INSERT INTO erp_suppliers (account_code, name, currency, created_by)
+    VALUES ('MAXVAC', 'MAXVAC', 'GBP', ${user.id})
     ON CONFLICT (account_code) DO UPDATE SET
       name = EXCLUDED.name,
       updated_at = NOW()
