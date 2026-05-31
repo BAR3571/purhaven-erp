@@ -4,5 +4,11 @@
   "rewrites": [
     { "source": "/", "destination": "/index.html" },
     { "source": "/orders", "destination": "/orders/sales-orders/index.html" }
-  ]
+  ],
+  "functions": {
+    "api/public/products/index.js":               { "memory": 2048 },
+    "api/despatches/[id]/status.js":              { "memory": 2048 },
+    "api/despatches/[id]/push-to-xero.js":        { "memory": 2048 },
+    "api/despatches/[id]/archive-to-onedrive.js": { "memory": 2048 }
+  }
 }

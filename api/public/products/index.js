@@ -51,12 +51,13 @@ export default async function handler(req, res) {
     };
   });
 
-  // Edge cache for 30 seconds; allow stale-while-revalidate for 1 day.
-  // ?nocache=1 disables caching entirely (handy for verifying ERP edits).
+  // Edge cache for 5 minutes; allow stale-while-revalidate for 1 week.
+  // Under burst load this means ~12 DB hits/hour at most instead of one per
+  // pageview. ?nocache=1 disables caching entirely (use after ERP edits).
   if (req.query.nocache) {
     res.setHeader('Cache-Control', 'no-store');
   } else {
-    res.setHeader('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=86400');
+    res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=604800');
   }
   return res.status(200).json({ ok: true, products });
 }
