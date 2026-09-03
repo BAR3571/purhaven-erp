@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles.css">
+<script src="/assets/js/entity-modals.js" defer></script>
 <style>
   .twocol { display: grid; grid-template-columns: 2fr 3fr; gap: 18px; align-items: start; }
   @media (max-width: 1000px) { .twocol { grid-template-columns: 1fr; } }
@@ -127,6 +128,10 @@
   const contactsEl = document.getElementById('contacts');
   const addressesEl = document.getElementById('addresses');
 
+  // Cached copy of the current supplier — used by the edit handlers so we can
+  // pre-fill the modal with existing data.
+  let currentSupplier = null;
+
   function setStatus(msg, cls) {
     statusEl.innerHTML = msg ? `<div class="card accent-${cls === 'err' ? 'pink' : 'green'}" style="padding:10px 14px;"><span class="${cls}">${msg}</span></div>` : '';
     if (msg) setTimeout(() => { statusEl.innerHTML = ''; }, 4000);
@@ -189,6 +194,7 @@
     const r = await fetch('/api/suppliers/' + id);
     const d = await r.json();
     if (!d.ok) { setStatus('Failed to load: ' + d.error, 'err'); return; }
+    currentSupplier = d.supplier;
     fillForm(d.supplier);
     titleEl.textContent = d.supplier.name + ' · ' + d.supplier.account_code;
     relationsEl.style.display = 'block';
@@ -236,19 +242,19 @@
     window.location.href = '/suppliers';
   });
 
-  document.getElementById('add-contact-btn').addEventListener('click', async () => {
-    const name = prompt('Contact name?'); if (!name) return;
-    const email = prompt('Email? (optional)') || '';
-    const phone = prompt('Phone? (optional)') || '';
-    const position = prompt('Position? (optional)') || '';
-    const isPrimary = confirm('Mark as primary contact?');
-    const r = await fetch('/api/suppliers/' + id + '/contacts', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, phone, position, is_primary: isPrimary })
+  document.getElementById('add-contact-btn').addEventListener('click', () => {
+    PurhavenModals.openContactModal({
+      contact: null,
+      onSubmit: async (payload) => {
+        const r = await fetch('/api/suppliers/' + id + '/contacts', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || 'Add failed');
+        loadSupplier();
+      }
     });
-    const d = await r.json();
-    if (!d.ok) { setStatus('Add failed: ' + d.error, 'err'); return; }
-    loadSupplier();
   });
 
   contactsEl.addEventListener('click', async (e) => {
@@ -262,38 +268,36 @@
       if (!d.ok) { setStatus('Delete failed: ' + d.error, 'err'); return; }
       loadSupplier();
     } else if (btn.dataset.action === 'edit-contact') {
-      const name = prompt('Name?') ?? null; if (name === null) return;
-      const email = prompt('Email?') || '';
-      const phone = prompt('Phone?') || '';
-      const position = prompt('Position?') || '';
-      const isPrimary = confirm('Mark as primary?');
-      const r = await fetch('/api/suppliers/' + id + '/contacts/' + cid, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, phone, position, is_primary: isPrimary })
+      const contact = (currentSupplier?.contacts || []).find(c => String(c.id) === String(cid));
+      if (!contact) { setStatus('Contact not found — reloading.', 'err'); loadSupplier(); return; }
+      PurhavenModals.openContactModal({
+        contact,
+        onSubmit: async (payload) => {
+          const r = await fetch('/api/suppliers/' + id + '/contacts/' + cid, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const d = await r.json();
+          if (!d.ok) throw new Error(d.error || 'Update failed');
+          loadSupplier();
+        }
       });
-      const d = await r.json();
-      if (!d.ok) { setStatus('Update failed: ' + d.error, 'err'); return; }
-      loadSupplier();
     }
   });
 
-  document.getElementById('add-address-btn').addEventListener('click', async () => {
-    const label = prompt('Label? (e.g. Head Office, Warehouse)') || '';
-    const type = prompt('Type? (billing / shipping / both)', 'both') || 'both';
-    const line1 = prompt('Line 1?') || '';
-    const line2 = prompt('Line 2? (optional)') || '';
-    const city = prompt('City?') || '';
-    const county = prompt('County? (optional)') || '';
-    const postcode = prompt('Postcode?') || '';
-    const country = prompt('Country (ISO code, e.g. GB)?', 'GB') || 'GB';
-    const isDefault = confirm('Set as default address?');
-    const r = await fetch('/api/suppliers/' + id + '/addresses', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ label, type, line1, line2, city, county, postcode, country, is_default: isDefault })
+  document.getElementById('add-address-btn').addEventListener('click', () => {
+    PurhavenModals.openAddressModal({
+      address: null,
+      onSubmit: async (payload) => {
+        const r = await fetch('/api/suppliers/' + id + '/addresses', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || 'Add failed');
+        loadSupplier();
+      }
     });
-    const d = await r.json();
-    if (!d.ok) { setStatus('Add failed: ' + d.error, 'err'); return; }
-    loadSupplier();
   });
 
   addressesEl.addEventListener('click', async (e) => {
@@ -307,22 +311,20 @@
       if (!d.ok) { setStatus('Delete failed: ' + d.error, 'err'); return; }
       loadSupplier();
     } else if (btn.dataset.action === 'edit-address') {
-      const label = prompt('Label?') || '';
-      const type = prompt('Type? (billing / shipping / both)', 'both') || 'both';
-      const line1 = prompt('Line 1?') || '';
-      const line2 = prompt('Line 2?') || '';
-      const city = prompt('City?') || '';
-      const county = prompt('County?') || '';
-      const postcode = prompt('Postcode?') || '';
-      const country = prompt('Country (ISO code)?', 'GB') || 'GB';
-      const isDefault = confirm('Set as default?');
-      const r = await fetch('/api/suppliers/' + id + '/addresses/' + aid, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label, type, line1, line2, city, county, postcode, country, is_default: isDefault })
+      const address = (currentSupplier?.addresses || []).find(a => String(a.id) === String(aid));
+      if (!address) { setStatus('Address not found — reloading.', 'err'); loadSupplier(); return; }
+      PurhavenModals.openAddressModal({
+        address,
+        onSubmit: async (payload) => {
+          const r = await fetch('/api/suppliers/' + id + '/addresses/' + aid, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const d = await r.json();
+          if (!d.ok) throw new Error(d.error || 'Update failed');
+          loadSupplier();
+        }
       });
-      const d = await r.json();
-      if (!d.ok) { setStatus('Update failed: ' + d.error, 'err'); return; }
-      loadSupplier();
     }
   });
 
