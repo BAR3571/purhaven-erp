@@ -194,11 +194,143 @@
     const buttons = [];
     if (so.status === 'draft' || so.status === 'on_hold') buttons.push(`<button type="button" class="btn btn-primary" data-act="confirm">Confirm order</button>`);
     if (['confirmed', 'picking', 'part_despatched'].includes(so.status)) buttons.push(`<button type="button" class="btn btn-primary" data-act="create-despatch">📋 Create pick list</button>`);
+    // Payment: Mark as paid / Mark unpaid — hidden on cancelled orders
+    if (so.status !== 'cancelled') {
+      const paidLabel = so.paid_at ? '💷 Update payment' : '💷 Mark as paid';
+      buttons.push(`<button type="button" class="btn ${so.paid_at ? 'btn-ghost' : 'btn-sky'}" data-act="mark-paid">${paidLabel}</button>`);
+      if (so.paid_at) buttons.push(`<button type="button" class="btn btn-ghost" data-act="unmark-paid" style="padding:6px 10px;">↺ Mark unpaid</button>`);
+    }
     if (so.status === 'draft' || so.status === 'confirmed') buttons.push(`<button type="button" class="btn btn-ghost" data-act="hold">Put on hold</button>`);
     if (so.status === 'on_hold') buttons.push(`<button type="button" class="btn btn-ghost" data-act="unhold">Take off hold</button>`);
     if (['draft', 'confirmed', 'on_hold'].includes(so.status)) buttons.push(`<button type="button" class="btn btn-danger" data-act="cancel">Cancel</button>`);
     if (so.status === 'draft' && so.lines.length === 0) buttons.push(`<button type="button" class="btn btn-danger" data-act="delete">Delete</button>`);
     actionsEl.innerHTML = buttons.join(' ');
+
+    // Payment info line (below the actions row)
+    const oldStamp = document.getElementById('so-payment-stamp');
+    if (oldStamp) oldStamp.remove();
+    if (so.paid_at) {
+      const paidDate = new Date(so.paid_at).toLocaleDateString('en-GB');
+      const amountStr = money(so.paid_amount_pence || so.total_pence, so.currency);
+      const method = so.payment_method || 'payment';
+      const ref = so.payment_ref ? ` · ref ${escapeText(so.payment_ref)}` : '';
+      actionsEl.insertAdjacentHTML('afterend',
+        `<p id="so-payment-stamp" style="margin:6px 0 0;color:var(--green);font-size:0.85rem;">✓ ${amountStr} paid via ${escapeText(method)} on ${paidDate}${ref}</p>`
+      );
+    }
+  }
+
+  function escapeText(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function openPaymentModal(so) {
+    const existing = so.paid_at ? {
+      paid_at: so.paid_at.slice(0, 10),
+      amount: (so.paid_amount_pence != null ? (so.paid_amount_pence / 100) : (so.total_pence / 100)).toFixed(2),
+      method: so.payment_method || '',
+      ref: so.payment_ref || '',
+      notes: so.payment_notes || ''
+    } : {
+      paid_at: new Date().toISOString().slice(0, 10),
+      amount: (so.total_pence / 100).toFixed(2),
+      method: '',
+      ref: '',
+      notes: ''
+    };
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="modal-card" style="max-width:520px;" onclick="event.stopPropagation()">
+        <button type="button" class="x" data-close>×</button>
+        <h2 style="margin:0 0 4px;">${so.paid_at ? 'Update payment' : 'Mark as paid'}</h2>
+        <p style="margin:0 0 14px;color:var(--ink-soft);font-size:0.85rem;">
+          Record the payment against ${escapeText(so.so_number)}. For website checkouts this is stamped automatically by the Revolut Merchant webhook — use this for off-website sales (emailed payment link, cash, bank transfer).
+        </p>
+
+        <form id="pay-form">
+          <div class="field-row">
+            <div class="field">
+              <label for="pay-method">Method *</label>
+              <select id="pay-method" required>
+                <option value="">— select —</option>
+                <option ${existing.method === 'Revolut payment link' ? 'selected' : ''}>Revolut payment link</option>
+                <option ${existing.method === 'Revolut Merchant (website)' ? 'selected' : ''}>Revolut Merchant (website)</option>
+                <option ${existing.method === 'Bank transfer' ? 'selected' : ''}>Bank transfer</option>
+                <option ${existing.method === 'Cash' ? 'selected' : ''}>Cash</option>
+                <option ${existing.method === 'Card (in person)' ? 'selected' : ''}>Card (in person)</option>
+                <option ${existing.method === 'Cheque' ? 'selected' : ''}>Cheque</option>
+                <option ${existing.method === 'Other' ? 'selected' : ''}>Other</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="pay-date">Paid on *</label>
+              <input type="date" id="pay-date" required value="${existing.paid_at}">
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="pay-amount">Amount (${so.currency}) *</label>
+              <input type="number" id="pay-amount" required step="0.01" min="0.01" value="${existing.amount}">
+              <small style="color:var(--ink-soft);font-size:0.75rem;">SO total: ${money(so.total_pence, so.currency)} — override only if partial payment.</small>
+            </div>
+            <div class="field">
+              <label for="pay-ref">Reference</label>
+              <input type="text" id="pay-ref" value="${escapeText(existing.ref)}" placeholder="e.g. Revolut txn ID">
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="pay-notes">Notes</label>
+            <input type="text" id="pay-notes" value="${escapeText(existing.notes)}" placeholder="Optional — anything worth recording">
+          </div>
+
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+            <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+            <button type="submit" class="btn btn-primary" id="pay-save">${so.paid_at ? 'Update payment' : 'Mark as paid'}</button>
+          </div>
+        </form>
+      </div>
+    `;
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop || e.target.dataset.close !== undefined) backdrop.remove();
+    });
+    document.body.appendChild(backdrop);
+    setTimeout(() => backdrop.querySelector('#pay-method').focus(), 30);
+
+    backdrop.querySelector('#pay-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const saveBtn = backdrop.querySelector('#pay-save');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+      try {
+        const amount = parseFloat(backdrop.querySelector('#pay-amount').value);
+        const payload = {
+          method:       backdrop.querySelector('#pay-method').value,
+          paid_at:      backdrop.querySelector('#pay-date').value,
+          amount_pence: Math.round(amount * 100),
+          ref:          backdrop.querySelector('#pay-ref').value.trim(),
+          notes:        backdrop.querySelector('#pay-notes').value.trim()
+        };
+        const r = await fetch('/api/sales-orders/' + id + '/payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || 'Save failed');
+        backdrop.remove();
+        setStatus('✓ Payment recorded.', 'ok');
+        load();
+      } catch (err) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = so.paid_at ? 'Update payment' : 'Mark as paid';
+        alert('Save failed: ' + (err.message || err));
+      }
+    });
   }
 
   function openCreateDespatchModal() {
@@ -266,12 +398,24 @@
          <button class="x" data-act="unalloc-serial" data-lid="${line.id}" data-sid="${s.id}" title="Unallocate">×</button>
        </span>`
     ).join('');
-    const poChips = (line.allocated_po_lines || []).map(a =>
-      `<span class="alloc-chip po" title="${fmt(a.supplier_name)}">
+    const salePence = line.unit_price_pence * (1 - (Number(line.discount_percent) || 0) / 100);
+    const poChips = (line.allocated_po_lines || []).map(a => {
+      const buy = a.po_unit_cost_pence;
+      const marginPct = (buy != null && salePence > 0)
+        ? ((salePence - buy) / salePence * 100).toFixed(2)
+        : null;
+      const marginBadge = marginPct != null
+        ? ` · buy £${(buy/100).toFixed(2)} · margin ${marginPct}%`
+        : '';
+      const marginColor = marginPct != null
+        ? (marginPct >= 20 ? 'var(--green)' : marginPct >= 10 ? 'var(--ink-soft)' : '#fca5a5')
+        : 'var(--ink-soft)';
+      return `<span class="alloc-chip po" title="${fmt(a.supplier_name)} · buy £${(buy/100).toFixed(2)} · margin ${marginPct || '—'}%">
          <a href="/orders/purchase-orders/detail?id=${a.po_id}" style="color:inherit;text-decoration:none;">${fmt(a.po_number)} ×${a.qty}</a>
+         <span style="color:${marginColor};font-size:0.75rem;">${marginBadge}</span>
          <button class="x" data-act="unalloc-po" data-aid="${a.id}" title="Unallocate">×</button>
-       </span>`
-    ).join('');
+       </span>`;
+    }).join('');
     return serialChips + poChips;
   }
 
@@ -540,6 +684,19 @@
     }
     if (act === 'create-despatch') {
       openCreateDespatchModal();
+      return;
+    }
+    if (act === 'mark-paid') {
+      openPaymentModal(currentSo);
+      return;
+    }
+    if (act === 'unmark-paid') {
+      if (!confirm('Clear the payment stamp from this SO?\n\nThis does NOT reverse any real payment — use it when the payment was recorded in error, or to re-enter it correctly.')) return;
+      const r = await fetch('/api/sales-orders/' + id + '/payment', { method: 'DELETE' });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Failed: ' + d.error, 'err'); return; }
+      setStatus('Payment stamp cleared.', 'ok');
+      load();
       return;
     }
     const prompts = {

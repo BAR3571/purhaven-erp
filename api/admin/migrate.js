@@ -654,7 +654,19 @@ const MIGRATIONS = [
   // Stamped when the PO PDF has been emailed to the supplier and archived.
   `ALTER TABLE erp_purchase_orders ADD COLUMN IF NOT EXISTS po_email_sent_at TIMESTAMPTZ`,
   `ALTER TABLE erp_purchase_orders ADD COLUMN IF NOT EXISTS po_email_to TEXT`,
-  `ALTER TABLE erp_purchase_orders ADD COLUMN IF NOT EXISTS onedrive_folder_url TEXT`
+  `ALTER TABLE erp_purchase_orders ADD COLUMN IF NOT EXISTS onedrive_folder_url TEXT`,
+
+  // ---------- SO payment tracking ----------
+  // Stamped when payment has been recorded against a sales order.
+  // For website orders the Merchant webhook sets these automatically; for
+  // off-website sales (email + Revolut link, cash, bank transfer) the user
+  // hits '💷 Mark as paid' and fills in method + reference.
+  `ALTER TABLE erp_sales_orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ`,
+  `ALTER TABLE erp_sales_orders ADD COLUMN IF NOT EXISTS paid_amount_pence INTEGER`,
+  `ALTER TABLE erp_sales_orders ADD COLUMN IF NOT EXISTS payment_method TEXT`,
+  `ALTER TABLE erp_sales_orders ADD COLUMN IF NOT EXISTS payment_ref TEXT`,
+  `ALTER TABLE erp_sales_orders ADD COLUMN IF NOT EXISTS payment_notes TEXT`,
+  `CREATE INDEX IF NOT EXISTS erp_so_paid_at_idx ON erp_sales_orders(paid_at)`
 ];
 
 export default async function handler(req, res) {

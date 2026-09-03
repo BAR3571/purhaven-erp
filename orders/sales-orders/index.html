@@ -124,7 +124,7 @@
           <td>${fmt(so.customer_ref)}</td>
           <td>${dateOnly(so.order_date)}</td>
           <td>${so.required_date ? dateOnly(so.required_date) : '—'}</td>
-          <td><span class="pill pill-${so.status.replace(/_/g,'-')}">${so.status.replace(/_/g,' ')}</span>${so.source === 'website' ? ' <span class="pill pill-confirmed" style="font-size:0.62rem;">web</span>' : ''}</td>
+          <td><span class="pill pill-${so.status.replace(/_/g,'-')}">${so.status.replace(/_/g,' ')}</span>${so.source === 'website' ? ' <span class="pill pill-confirmed" style="font-size:0.62rem;">web</span>' : ''}${so.paid_at ? ' <span class="pill pill-complete" style="font-size:0.62rem;" title="Paid on ' + new Date(so.paid_at).toLocaleDateString('en-GB') + '">paid</span>' : (so.status !== 'cancelled' && so.status !== 'draft' ? ' <span class="pill" style="background:#fde7e7;color:#991b1b;font-size:0.62rem;">unpaid</span>' : '')}</td>
           <td>${allocChip}</td>
           <td style="text-align:right">${so.line_count}</td>
           <td style="text-align:right"><strong>${money(so.total_pence, so.currency)}</strong></td>
