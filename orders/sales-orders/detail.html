@@ -214,8 +214,12 @@
       const amountStr = money(so.paid_amount_pence || so.total_pence, so.currency);
       const method = so.payment_method || 'payment';
       const ref = so.payment_ref ? ` · ref ${escapeText(so.payment_ref)}` : '';
+      const fee = so.processing_fee_pence;
+      const feeLine = fee > 0
+        ? ` · fee ${money(fee, so.currency)} → net ${money((so.paid_amount_pence || so.total_pence) - fee, so.currency)}`
+        : '';
       actionsEl.insertAdjacentHTML('afterend',
-        `<p id="so-payment-stamp" style="margin:6px 0 0;color:var(--green);font-size:0.85rem;">✓ ${amountStr} paid via ${escapeText(method)} on ${paidDate}${ref}</p>`
+        `<p id="so-payment-stamp" style="margin:6px 0 0;color:var(--green);font-size:0.85rem;">✓ ${amountStr} paid via ${escapeText(method)} on ${paidDate}${ref}${feeLine}</p>`
       );
     }
   }
@@ -225,29 +229,49 @@
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
-  function openPaymentModal(so) {
+  async function openPaymentModal(so) {
+    // Load active bank accounts up-front so the user can pick which one the
+    // payment landed in (defaults to the previously used one, or the Revolut
+    // account if there's only one match).
+    let bankAccounts = [];
+    try {
+      const r = await fetch('/api/accounts/bank-accounts');
+      const d = await r.json();
+      if (d.ok) bankAccounts = d.bank_accounts || [];
+    } catch { /* non-fatal — bank account is optional */ }
+
     const existing = so.paid_at ? {
       paid_at: so.paid_at.slice(0, 10),
       amount: (so.paid_amount_pence != null ? (so.paid_amount_pence / 100) : (so.total_pence / 100)).toFixed(2),
       method: so.payment_method || '',
       ref: so.payment_ref || '',
-      notes: so.payment_notes || ''
+      notes: so.payment_notes || '',
+      fee: so.processing_fee_pence != null ? (so.processing_fee_pence / 100).toFixed(2) : '',
+      bank_account_id: so.payment_bank_account_id || ''
     } : {
       paid_at: new Date().toISOString().slice(0, 10),
       amount: (so.total_pence / 100).toFixed(2),
       method: '',
       ref: '',
-      notes: ''
+      notes: '',
+      fee: '',
+      bank_account_id: bankAccounts.find(b => (b.provider || '').toLowerCase().includes('revolut'))?.id || (bankAccounts[0]?.id || '')
     };
+
+    const bankOptions = bankAccounts.length === 0
+      ? `<option value="">— no bank accounts set up —</option>`
+      : `<option value="">— select —</option>` + bankAccounts.map(b =>
+          `<option value="${b.id}" ${String(existing.bank_account_id) === String(b.id) ? 'selected' : ''}>${escapeText(b.name)}${b.provider ? ' (' + escapeText(b.provider) + ')' : ''} · ${escapeText(b.currency)}</option>`
+        ).join('');
 
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop';
     backdrop.innerHTML = `
-      <div class="modal-card" style="max-width:520px;" onclick="event.stopPropagation()">
+      <div class="modal-card" style="max-width:560px;" onclick="event.stopPropagation()">
         <button type="button" class="x" data-close>×</button>
         <h2 style="margin:0 0 4px;">${so.paid_at ? 'Update payment' : 'Mark as paid'}</h2>
         <p style="margin:0 0 14px;color:var(--ink-soft);font-size:0.85rem;">
-          Record the payment against ${escapeText(so.so_number)}. For website checkouts this is stamped automatically by the Revolut Merchant webhook — use this for off-website sales (emailed payment link, cash, bank transfer).
+          Record the payment against ${escapeText(so.so_number)}. Include any processing fee taken by Revolut/Stripe and it will be booked automatically as a Bank/payment fee expense — so the P&amp;L nets out correctly.
         </p>
 
         <form id="pay-form">
@@ -273,9 +297,24 @@
 
           <div class="field-row">
             <div class="field">
-              <label for="pay-amount">Amount (${so.currency}) *</label>
+              <label for="pay-amount">Amount received (${so.currency}) *</label>
               <input type="number" id="pay-amount" required step="0.01" min="0.01" value="${existing.amount}">
-              <small style="color:var(--ink-soft);font-size:0.75rem;">SO total: ${money(so.total_pence, so.currency)} — override only if partial payment.</small>
+              <small style="color:var(--ink-soft);font-size:0.75rem;">Gross — what the customer paid you. SO total: ${money(so.total_pence, so.currency)}.</small>
+            </div>
+            <div class="field">
+              <label for="pay-fee">Processing fee (${so.currency})</label>
+              <input type="number" id="pay-fee" step="0.01" min="0" value="${existing.fee}" placeholder="0.00">
+              <small style="color:var(--ink-soft);font-size:0.75rem;">Card fee taken by Revolut/Stripe. Booked as a Bank/payment fee expense.</small>
+            </div>
+          </div>
+
+          <p id="pay-net" style="margin:-8px 0 12px;font-size:0.85rem;color:var(--ink-soft);"></p>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="pay-bank">Landed in bank account</label>
+              <select id="pay-bank">${bankOptions}</select>
+              <small style="color:var(--ink-soft);font-size:0.75rem;">Which account the net amount was credited to.</small>
             </div>
             <div class="field">
               <label for="pay-ref">Reference</label>
@@ -301,6 +340,26 @@
     document.body.appendChild(backdrop);
     setTimeout(() => backdrop.querySelector('#pay-method').focus(), 30);
 
+    // Live "net received = amount − fee" line under the amount/fee row
+    const amountEl = backdrop.querySelector('#pay-amount');
+    const feeEl = backdrop.querySelector('#pay-fee');
+    const netEl = backdrop.querySelector('#pay-net');
+    const symbol = so.currency === 'GBP' ? '£' : so.currency === 'EUR' ? '€' : so.currency === 'USD' ? '$' : (so.currency + ' ');
+    function recalcNet() {
+      const amt = parseFloat(amountEl.value) || 0;
+      const fee = parseFloat(feeEl.value) || 0;
+      const net = amt - fee;
+      if (fee > 0) {
+        netEl.innerHTML = `→ Net received in bank: <strong>${symbol}${net.toFixed(2)}</strong> · Fee <strong>${symbol}${fee.toFixed(2)}</strong> auto-booked as expense`;
+        netEl.style.color = net > 0 ? 'var(--green)' : '#fca5a5';
+      } else {
+        netEl.textContent = '';
+      }
+    }
+    amountEl.addEventListener('input', recalcNet);
+    feeEl.addEventListener('input', recalcNet);
+    recalcNet();
+
     backdrop.querySelector('#pay-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const saveBtn = backdrop.querySelector('#pay-save');
@@ -308,12 +367,16 @@
       saveBtn.textContent = 'Saving…';
       try {
         const amount = parseFloat(backdrop.querySelector('#pay-amount').value);
+        const fee = parseFloat(backdrop.querySelector('#pay-fee').value) || 0;
+        const bankAcct = backdrop.querySelector('#pay-bank').value;
         const payload = {
-          method:       backdrop.querySelector('#pay-method').value,
-          paid_at:      backdrop.querySelector('#pay-date').value,
-          amount_pence: Math.round(amount * 100),
-          ref:          backdrop.querySelector('#pay-ref').value.trim(),
-          notes:        backdrop.querySelector('#pay-notes').value.trim()
+          method:                backdrop.querySelector('#pay-method').value,
+          paid_at:               backdrop.querySelector('#pay-date').value,
+          amount_pence:          Math.round(amount * 100),
+          processing_fee_pence:  Math.round(fee * 100),
+          bank_account_id:       bankAcct ? parseInt(bankAcct, 10) : null,
+          ref:                   backdrop.querySelector('#pay-ref').value.trim(),
+          notes:                 backdrop.querySelector('#pay-notes').value.trim()
         };
         const r = await fetch('/api/sales-orders/' + id + '/payment', {
           method: 'POST',
@@ -323,7 +386,8 @@
         const d = await r.json();
         if (!d.ok) throw new Error(d.error || 'Save failed');
         backdrop.remove();
-        setStatus('✓ Payment recorded.', 'ok');
+        const feeNote = fee > 0 ? ` · fee ${symbol}${fee.toFixed(2)} booked as expense` : '';
+        setStatus(`✓ Payment recorded${feeNote}.`, 'ok');
         load();
       } catch (err) {
         saveBtn.disabled = false;

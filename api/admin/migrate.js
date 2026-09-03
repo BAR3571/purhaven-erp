@@ -666,6 +666,13 @@ const MIGRATIONS = [
   `ALTER TABLE erp_sales_orders ADD COLUMN IF NOT EXISTS payment_method TEXT`,
   `ALTER TABLE erp_sales_orders ADD COLUMN IF NOT EXISTS payment_ref TEXT`,
   `ALTER TABLE erp_sales_orders ADD COLUMN IF NOT EXISTS payment_notes TEXT`,
+  // Card processing fee taken by Revolut/Stripe/etc. Recorded here for a
+  // customer view, and mirrored into erp_expenses via payment_expense_id so
+  // it flows through the P&L as a Bank/payment fee. bank_account_id records
+  // which account the payment landed in (net of the fee).
+  `ALTER TABLE erp_sales_orders ADD COLUMN IF NOT EXISTS processing_fee_pence INTEGER`,
+  `ALTER TABLE erp_sales_orders ADD COLUMN IF NOT EXISTS payment_bank_account_id INTEGER REFERENCES erp_bank_accounts(id)`,
+  `ALTER TABLE erp_sales_orders ADD COLUMN IF NOT EXISTS payment_expense_id INTEGER REFERENCES erp_expenses(id) ON DELETE SET NULL`,
   `CREATE INDEX IF NOT EXISTS erp_so_paid_at_idx ON erp_sales_orders(paid_at)`
 ];
 
