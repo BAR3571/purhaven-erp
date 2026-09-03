@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P&L · PurHaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  .pnl-controls { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-bottom: 16px; }
+  .pnl-controls .field { margin: 0; }
+  .pnl-controls input { padding: 7px 9px; }
+  .pos { color: var(--green); font-weight: 600; }
+  .neg { color: #b32a2a; font-weight: 600; }
+  .pnl-tot td { border-top: 2px solid var(--ink); font-weight: 700; }
+</style>
+</head>
+<body data-page="accounts">
+
+<div class="page-header">
+  <div>
+    <a href="/accounts" style="color:var(--ink-dim);font-size:0.85rem;">← Accounts</a>
+    <h1 style="margin:4px 0 0;">📈 Profit &amp; Loss</h1>
+    <div id="period-note" style="color:var(--ink-soft);margin-top:4px;font-size:0.9rem;"></div>
+  </div>
+  <div class="actions">
+    <a id="csv-btn" class="btn btn-ghost" href="#">⤓ CSV</a>
+  </div>
+</div>
+
+<div class="card accent-sky">
+  <form id="range-form" class="pnl-controls">
+    <div class="field"><label for="from">From</label><input type="date" id="from"></div>
+    <div class="field"><label for="to">To</label><input type="date" id="to"></div>
+    <div class="field">
+      <button type="button" class="btn btn-ghost" data-preset="ytd">Year to date</button>
+      <button type="button" class="btn btn-ghost" data-preset="last90">Last 90 days</button>
+      <button type="button" class="btn btn-ghost" data-preset="last12m">Last 12 months</button>
+      <button type="button" class="btn btn-ghost" data-preset="lastyear">Last year</button>
+    </div>
+    <div class="field"><button type="submit" class="btn btn-primary">Run</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">Monthly breakdown</h2>
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Month</th>
+          <th style="text-align:right;">Revenue</th>
+          <th style="text-align:right;">COGS</th>
+          <th style="text-align:right;">Gross profit</th>
+          <th style="text-align:right;">Overheads</th>
+          <th style="text-align:right;">Net profit</th>
+        </tr>
+      </thead>
+      <tbody id="pnl-body"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card accent-orange">
+  <h2 style="margin-top:0;">Overheads by category</h2>
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Category</th><th style="text-align:right;">Entries</th><th style="text-align:right;">Total</th></tr></thead>
+      <tbody id="cat-body"><tr><td colspan="3" class="empty">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script type="module">
+  import { mountShell, fmt, money, dateOnly } from '/app.js';
+  await mountShell();
+
+  const body = document.getElementById('pnl-body');
+  const catBody = document.getElementById('cat-body');
+  const fromEl = document.getElementById('from');
+  const toEl = document.getElementById('to');
+  const periodNote = document.getElementById('period-note');
+
+  // Default range = year to date
+  const today = new Date();
+  fromEl.valueAsDate = new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
+  toEl.valueAsDate = today;
+
+  async function run() {
+    const params = new URLSearchParams({ from: fromEl.value, to: toEl.value });
+    const r = await fetch('/api/accounts/pnl?' + params); const d = await r.json();
+    if (!d.ok) { body.innerHTML = `<tr><td colspan="6" class="empty">${d.error}</td></tr>`; return; }
+
+    periodNote.textContent = `${dateOnly(d.period.from)} → ${dateOnly(d.period.to)}`;
+
+    const pnlCell = (v) => `<td style="text-align:right;" class="${v > 0 ? 'pos' : v < 0 ? 'neg' : ''}">${money(v)}</td>`;
+
+    if (d.months.length === 0) {
+      body.innerHTML = '<tr><td colspan="6" class="empty">No activity in this period.</td></tr>';
+    } else {
+      const rows = d.months.map(m => `
+        <tr>
+          <td><strong>${m.month}</strong></td>
+          ${pnlCell(m.revenue_pence)}
+          ${pnlCell(m.cogs_pence)}
+          ${pnlCell(m.gross_profit_pence)}
+          ${pnlCell(m.expenses_pence)}
+          ${pnlCell(m.net_profit_pence)}
+        </tr>
+      `).join('');
+      const t = d.totals;
+      body.innerHTML = rows + `
+        <tr class="pnl-tot">
+          <td>Total</td>
+          ${pnlCell(t.revenue_pence)}
+          ${pnlCell(t.cogs_pence)}
+          ${pnlCell(t.gross_profit_pence)}
+          ${pnlCell(t.expenses_pence)}
+          ${pnlCell(t.net_profit_pence)}
+        </tr>
+      `;
+    }
+
+    if (d.expenses_by_category.length === 0) {
+      catBody.innerHTML = '<tr><td colspan="3" class="empty">No overheads in this period.</td></tr>';
+    } else {
+      catBody.innerHTML = d.expenses_by_category.map(c => `
+        <tr>
+          <td><strong>${fmt(c.category)}</strong></td>
+          <td style="text-align:right;">${Number(c.count)}</td>
+          <td style="text-align:right;"><strong>${money(c.amount_pence)}</strong></td>
+        </tr>
+      `).join('');
+    }
+
+    // CSV export: build client-side so no extra endpoint needed
+    const csvBtn = document.getElementById('csv-btn');
+    const header = ['Month','Revenue','COGS','Gross profit','Overheads','Net profit'];
+    const csvRows = [header.join(',')];
+    for (const m of d.months) {
+      csvRows.push([m.month, (m.revenue_pence/100).toFixed(2), (m.cogs_pence/100).toFixed(2),
+        (m.gross_profit_pence/100).toFixed(2), (m.expenses_pence/100).toFixed(2),
+        (m.net_profit_pence/100).toFixed(2)].join(','));
+    }
+    csvRows.push(['Total',(d.totals.revenue_pence/100).toFixed(2),(d.totals.cogs_pence/100).toFixed(2),
+      (d.totals.gross_profit_pence/100).toFixed(2),(d.totals.expenses_pence/100).toFixed(2),
+      (d.totals.net_profit_pence/100).toFixed(2)].join(','));
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8' });
+    csvBtn.href = URL.createObjectURL(blob);
+    csvBtn.download = `pnl-${d.period.from}-to-${d.period.to}.csv`;
+  }
+
+  document.getElementById('range-form').addEventListener('submit', (e) => { e.preventDefault(); run(); });
+
+  document.querySelectorAll('[data-preset]').forEach(b => {
+    b.addEventListener('click', () => {
+      const p = b.dataset.preset;
+      const now = new Date();
+      const y = now.getUTCFullYear();
+      let from, to = now;
+      if (p === 'ytd')       from = new Date(Date.UTC(y, 0, 1));
+      if (p === 'last90')    from = new Date(now - 90*864e5);
+      if (p === 'last12m')   from = new Date(Date.UTC(y - 1, now.getUTCMonth(), now.getUTCDate()));
+      if (p === 'lastyear') { from = new Date(Date.UTC(y - 1, 0, 1)); to = new Date(Date.UTC(y - 1, 11, 31)); }
+      fromEl.valueAsDate = from;
+      toEl.valueAsDate = to;
+      run();
+    });
+  });
+
+  await run();
+</script>
+
+</body>
+</html>

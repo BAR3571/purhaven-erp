@@ -553,7 +553,81 @@ const MIGRATIONS = [
   // Stamp on the despatch itself so the manual "push to Xero" button
   // can show status and avoid duplicate invoices.
   `ALTER TABLE erp_despatches ADD COLUMN IF NOT EXISTS xero_invoice_id TEXT`,
-  `ALTER TABLE erp_despatches ADD COLUMN IF NOT EXISTS xero_pushed_at TIMESTAMPTZ`
+  `ALTER TABLE erp_despatches ADD COLUMN IF NOT EXISTS xero_pushed_at TIMESTAMPTZ`,
+
+  // ---------- Accounts module (Sprint 1) ----------
+  // Lightweight accounts: bank accounts, expenses (overheads), and a bank-
+  // transactions ledger that Sprint 2 will populate from the Revolut API.
+  `CREATE TABLE IF NOT EXISTS erp_bank_accounts (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    provider TEXT,
+    currency TEXT NOT NULL DEFAULT 'GBP',
+    opening_balance_pence INTEGER NOT NULL DEFAULT 0,
+    opening_balance_date DATE,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS erp_expense_categories (
+    id SERIAL PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 100,
+    active BOOLEAN NOT NULL DEFAULT TRUE
+  )`,
+
+  `INSERT INTO erp_expense_categories (name, sort_order) VALUES
+     ('Stock purchases', 10),
+     ('Delivery / carriage', 20),
+     ('Web hosting & subscriptions', 30),
+     ('Marketing / advertising', 40),
+     ('Bank / payment fees', 50),
+     ('Insurance', 60),
+     ('Professional fees', 70),
+     ('Rent', 80),
+     ('Utilities', 90),
+     ('Travel', 100),
+     ('Office supplies', 110),
+     ('Training', 120),
+     ('Other', 200)
+   ON CONFLICT (name) DO NOTHING`,
+
+  `CREATE TABLE IF NOT EXISTS erp_expenses (
+    id SERIAL PRIMARY KEY,
+    expense_date DATE NOT NULL,
+    category_id INTEGER REFERENCES erp_expense_categories(id),
+    supplier TEXT,
+    description TEXT NOT NULL,
+    amount_pence INTEGER NOT NULL,
+    vat_pence INTEGER,
+    bank_account_id INTEGER REFERENCES erp_bank_accounts(id),
+    receipt_url TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by INTEGER REFERENCES erp_users(id),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS erp_expenses_date_idx ON erp_expenses(expense_date DESC)`,
+  `CREATE INDEX IF NOT EXISTS erp_expenses_category_idx ON erp_expenses(category_id)`,
+
+  `CREATE TABLE IF NOT EXISTS erp_bank_transactions (
+    id BIGSERIAL PRIMARY KEY,
+    bank_account_id INTEGER NOT NULL REFERENCES erp_bank_accounts(id),
+    txn_date DATE NOT NULL,
+    amount_pence INTEGER NOT NULL,
+    description TEXT,
+    reference TEXT,
+    matched_so_id INTEGER REFERENCES erp_sales_orders(id),
+    matched_expense_id INTEGER REFERENCES erp_expenses(id),
+    matched_po_id INTEGER REFERENCES erp_purchase_orders(id),
+    imported_from TEXT NOT NULL DEFAULT 'manual',
+    source_txn_id TEXT UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS erp_bank_txn_date_idx ON erp_bank_transactions(txn_date DESC)`,
+  `CREATE INDEX IF NOT EXISTS erp_bank_txn_account_idx ON erp_bank_transactions(bank_account_id)`
 ];
 
 export default async function handler(req, res) {

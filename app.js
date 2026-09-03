@@ -7,6 +7,7 @@ const NAV = [
   { key: 'suppliers', href: '/suppliers',              label: '🏷️ Suppliers' },
   { key: 'orders',    href: '/orders/sales-orders',    label: '📦 Orders' },
   { key: 'products',  href: '/products',               label: '🧰 Products & Stock' },
+  { key: 'accounts',  href: '/accounts',               label: '💷 Accounts' },
   { key: 'reports',   href: '/reports',                label: '📋 Reports' }
 ];
 

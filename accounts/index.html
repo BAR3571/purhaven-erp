@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Accounts · PurHaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  .acc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .acc-tile { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; }
+  .acc-tile .label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-dim); }
+  .acc-tile .val { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.55rem; margin: 4px 0 2px; color: var(--ink); }
+  .acc-tile .sub { font-size: 0.78rem; color: var(--ink-soft); }
+  .acc-tile.tile-green .val { color: var(--green); }
+  .acc-tile.tile-red   .val { color: #b32a2a; }
+  .exp-form { display: grid; grid-template-columns: 130px 1fr 160px 130px 140px auto; gap: 10px; align-items: end; }
+  .exp-form .field { margin: 0; }
+  .exp-form input, .exp-form select { padding: 7px 9px; }
+  @media (max-width: 900px) { .exp-form { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body data-page="accounts">
+
+<div class="page-header">
+  <h1>💷 Accounts</h1>
+  <div class="actions">
+    <a href="/accounts/pnl" class="btn btn-ghost">📈 Full P&amp;L →</a>
+  </div>
+</div>
+
+<div id="cash-strip" class="acc-grid"></div>
+
+<div class="card accent-green">
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+    <h2 style="margin:0;">This month</h2>
+    <span id="mtd-note" style="color:var(--ink-soft); font-size:0.85rem;"></span>
+  </div>
+  <div id="mtd" class="acc-grid" style="margin-bottom:0;"></div>
+</div>
+
+<div class="card accent-sky">
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+    <h2 style="margin:0;">Year to date</h2>
+    <a href="/accounts/pnl" style="color:var(--sky-deep);font-size:0.85rem;">Full P&amp;L →</a>
+  </div>
+  <div id="ytd" class="acc-grid" style="margin-bottom:0;"></div>
+</div>
+
+<div class="card accent-purple">
+  <h2 style="margin-top:0;">Add an expense</h2>
+  <p style="color:var(--ink-soft); font-size:0.85rem; margin:0 0 12px;">Record overheads (rent, subscriptions, ads, delivery, professional fees…). If you pick a bank account it also records the outflow so cash position stays live.</p>
+  <form id="exp-form" class="exp-form">
+    <div class="field">
+      <label for="e-date">Date</label>
+      <input type="date" id="e-date" required>
+    </div>
+    <div class="field">
+      <label for="e-desc">Description</label>
+      <input type="text" id="e-desc" placeholder="e.g. Vercel Pro subscription" required>
+    </div>
+    <div class="field">
+      <label for="e-supplier">Supplier</label>
+      <input type="text" id="e-supplier" placeholder="e.g. Vercel Inc">
+    </div>
+    <div class="field">
+      <label for="e-category">Category</label>
+      <select id="e-category"></select>
+    </div>
+    <div class="field">
+      <label for="e-bank">Paid from</label>
+      <select id="e-bank"><option value="">— none —</option></select>
+    </div>
+    <div class="field">
+      <label for="e-amount">Amount (£)</label>
+      <input type="number" id="e-amount" step="0.01" min="0" placeholder="0.00" required style="width:110px;">
+    </div>
+    <div class="field" style="grid-column: 1 / -1; text-align: right;">
+      <button type="submit" class="btn btn-primary">Save expense</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+    <h2 style="margin:0;">Recent expenses</h2>
+    <span id="exp-count" style="color:var(--ink-soft); font-size:0.85rem;"></span>
+  </div>
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Description</th>
+          <th>Category</th>
+          <th>Supplier</th>
+          <th>Bank</th>
+          <th style="text-align:right;">Amount</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="exp-rows"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card accent-orange">
+  <h2 style="margin-top:0;">Bank accounts</h2>
+  <p style="color:var(--ink-soft); font-size:0.85rem; margin:0 0 12px;">Add your Revolut Business + any other business accounts you want tracked. Sprint 2 will auto-import Revolut transactions.</p>
+  <div id="banks" style="margin-bottom:12px;"></div>
+  <details>
+    <summary style="cursor:pointer; color:var(--sky-deep); font-weight:600;">+ Add a bank account</summary>
+    <form id="bank-form" style="display:grid; grid-template-columns: 1fr 1fr 130px 130px auto; gap:10px; margin-top:12px; align-items:end;">
+      <div class="field"><label for="b-name">Name</label><input type="text" id="b-name" placeholder="e.g. Revolut Business" required></div>
+      <div class="field"><label for="b-provider">Provider</label><input type="text" id="b-provider" placeholder="e.g. Revolut"></div>
+      <div class="field"><label for="b-currency">Currency</label><input type="text" id="b-currency" value="GBP"></div>
+      <div class="field"><label for="b-open">Opening balance (£)</label><input type="number" id="b-open" step="0.01" value="0"></div>
+      <div class="field" style="text-align:right;"><button type="submit" class="btn btn-primary">Add account</button></div>
+    </form>
+  </details>
+</div>
+
+<script type="module">
+  import { mountShell, fmt, money, dateOnly } from '/app.js';
+  await mountShell();
+
+  const cashStrip = document.getElementById('cash-strip');
+  const mtdEl = document.getElementById('mtd');
+  const ytdEl = document.getElementById('ytd');
+  const mtdNote = document.getElementById('mtd-note');
+  const expRows = document.getElementById('exp-rows');
+  const expCount = document.getElementById('exp-count');
+  const catSel = document.getElementById('e-category');
+  const bankSel = document.getElementById('e-bank');
+  const banksEl = document.getElementById('banks');
+
+  document.getElementById('e-date').valueAsDate = new Date();
+
+  function tile(label, value, sub, cls) {
+    return `<div class="acc-tile ${cls || ''}">
+      <div class="label">${label}</div>
+      <div class="val">${value}</div>
+      <div class="sub">${sub || ''}</div>
+    </div>`;
+  }
+
+  async function loadSummary() {
+    const r = await fetch('/api/accounts/summary'); const d = await r.json();
+    if (!d.ok) { cashStrip.innerHTML = `<p class="err">${d.error}</p>`; return; }
+
+    // Cash strip: one tile per bank + total tile
+    const accounts = d.cash.accounts.map(a => tile(
+      a.name, money(a.current_balance_pence, a.currency || 'GBP'),
+      (a.provider || '') + ' · ' + (a.currency || 'GBP'),
+      'tile-green'
+    )).join('');
+    cashStrip.innerHTML = accounts + tile('Total cash', money(d.cash.total_pence), 'Across ' + d.cash.accounts.length + ' account' + (d.cash.accounts.length === 1 ? '' : 's'), 'tile-green');
+
+    // MTD + YTD rows
+    const period = (p) => [
+      tile('Revenue', money(p.revenue_pence), p.order_count + ' order' + (p.order_count === 1 ? '' : 's'), 'tile-green'),
+      tile('COGS', money(p.cogs_pence), 'Cost of goods sold'),
+      tile('Overheads', money(p.expenses_pence), p.expense_count + ' entr' + (p.expense_count === 1 ? 'y' : 'ies')),
+      tile('Gross profit', money(p.gross_profit_pence), '', p.gross_profit_pence >= 0 ? 'tile-green' : 'tile-red'),
+      tile('Net profit', money(p.net_profit_pence), '', p.net_profit_pence >= 0 ? 'tile-green' : 'tile-red')
+    ].join('');
+    mtdEl.innerHTML = period(d.mtd);
+    ytdEl.innerHTML = period(d.ytd);
+    mtdNote.textContent = 'as of ' + dateOnly(d.as_of);
+  }
+
+  async function loadExpenses() {
+    const r = await fetch('/api/accounts/expenses'); const d = await r.json();
+    if (!d.ok) { expRows.innerHTML = `<tr><td colspan="7" class="empty">${d.error}</td></tr>`; return; }
+    // populate dropdowns
+    catSel.innerHTML = '<option value="">— pick a category —</option>' +
+      d.categories.map(c => `<option value="${c.id}">${fmt(c.name)}</option>`).join('');
+    bankSel.innerHTML = '<option value="">— none —</option>' +
+      d.bank_accounts.map(b => `<option value="${b.id}">${fmt(b.name)}</option>`).join('');
+    // table
+    if (d.expenses.length === 0) {
+      expRows.innerHTML = '<tr><td colspan="7" class="empty">No expenses yet</td></tr>';
+    } else {
+      expRows.innerHTML = d.expenses.slice(0, 25).map(e => `
+        <tr>
+          <td>${dateOnly(e.expense_date)}</td>
+          <td>${fmt(e.description)}</td>
+          <td>${fmt(e.category_name)}</td>
+          <td>${fmt(e.supplier)}</td>
+          <td>${fmt(e.bank_account_name)}</td>
+          <td style="text-align:right;">${money(e.amount_pence)}</td>
+          <td><button type="button" class="btn btn-ghost" data-del="${e.id}" style="padding:2px 8px; font-size:0.75rem;">Delete</button></td>
+        </tr>
+      `).join('');
+    }
+    expCount.textContent = `${d.expenses.length} entr${d.expenses.length === 1 ? 'y' : 'ies'}`;
+  }
+
+  async function loadBanks() {
+    const r = await fetch('/api/accounts/bank-accounts'); const d = await r.json();
+    if (!d.ok) return;
+    if (d.bank_accounts.length === 0) {
+      banksEl.innerHTML = '<p style="color:var(--ink-dim); font-size:0.9rem;">No bank accounts yet — add one below.</p>';
+    } else {
+      banksEl.innerHTML = `<div class="table-wrap"><table class="data">
+        <thead><tr><th>Name</th><th>Provider</th><th>Currency</th><th style="text-align:right;">Opening</th><th style="text-align:right;">Current</th></tr></thead>
+        <tbody>${d.bank_accounts.map(b => `<tr>
+          <td><strong>${fmt(b.name)}</strong></td>
+          <td>${fmt(b.provider)}</td>
+          <td>${fmt(b.currency)}</td>
+          <td style="text-align:right;">${money(b.opening_balance_pence, b.currency || 'GBP')}</td>
+          <td style="text-align:right;"><strong>${money(b.current_balance_pence, b.currency || 'GBP')}</strong></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+    }
+  }
+
+  document.getElementById('exp-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {
+      expense_date: document.getElementById('e-date').value,
+      description: document.getElementById('e-desc').value.trim(),
+      supplier: document.getElementById('e-supplier').value.trim() || null,
+      category_id: parseInt(catSel.value, 10) || null,
+      bank_account_id: parseInt(bankSel.value, 10) || null,
+      amount: document.getElementById('e-amount').value
+    };
+    const r = await fetch('/api/accounts/expenses', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!d.ok) { alert('Save failed: ' + d.error); return; }
+    e.target.reset();
+    document.getElementById('e-date').valueAsDate = new Date();
+    await Promise.all([loadExpenses(), loadSummary()]);
+  });
+
+  document.getElementById('bank-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {
+      name: document.getElementById('b-name').value.trim(),
+      provider: document.getElementById('b-provider').value.trim() || null,
+      currency: document.getElementById('b-currency').value.trim() || 'GBP',
+      opening_balance: document.getElementById('b-open').value
+    };
+    const r = await fetch('/api/accounts/bank-accounts', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!d.ok) { alert('Save failed: ' + d.error); return; }
+    e.target.reset();
+    document.getElementById('b-currency').value = 'GBP';
+    await Promise.all([loadBanks(), loadExpenses(), loadSummary()]);
+  });
+
+  expRows.addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('button[data-del]');
+    if (!btn) return;
+    if (!confirm('Delete this expense?')) return;
+    const r = await fetch('/api/accounts/expenses/' + btn.dataset.del, { method: 'DELETE' });
+    const d = await r.json();
+    if (!d.ok) { alert('Delete failed: ' + d.error); return; }
+    await Promise.all([loadExpenses(), loadSummary()]);
+  });
+
+  await Promise.all([loadSummary(), loadExpenses(), loadBanks()]);
+</script>
+
+</body>
+</html>
