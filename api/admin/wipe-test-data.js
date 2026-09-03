@@ -15,9 +15,16 @@ import { neon } from '@neondatabase/serverless';
 // archived_documents.
 //
 // All SERIAL sequences reset to 1 so the next SO is SO-000001 again.
+//
+// IMPORTANT: We use DELETE (not TRUNCATE CASCADE) because TRUNCATE CASCADE
+// cascades to ANY table that FK-references the target, ignoring ON DELETE
+// clauses. erp_products has manufacturer_id -> erp_suppliers(id), so a naive
+// TRUNCATE erp_suppliers CASCADE would ALSO truncate erp_products. That has
+// bitten us once already — never again.
 
+// Order matters: children first, then parents. If you add a new table, put
+// it above its parent.
 const WIPE_TABLES = [
-  // children first (though CASCADE will handle them, list is documentation)
   'erp_parcel_items', 'erp_parcels',
   'erp_despatch_lines', 'erp_despatches',
   'erp_goods_in_lines', 'erp_goods_in',
@@ -27,8 +34,26 @@ const WIPE_TABLES = [
   'erp_stock_movements', 'erp_product_serials', 'erp_stock_levels',
   'erp_bank_transactions',
   'erp_customer_contacts', 'erp_customer_addresses', 'erp_customers',
+  // Suppliers last because erp_products.manufacturer_id references them;
+  // DELETE (unlike TRUNCATE CASCADE) respects ON DELETE SET NULL so
+  // products survive with manufacturer_id NULLed.
   'erp_supplier_contacts', 'erp_supplier_addresses', 'erp_suppliers',
   'erp_archived_documents'
+];
+
+// Sequences to reset so IDs start at 1 again.
+const SEQUENCES_TO_RESET = [
+  'erp_parcel_items_id_seq', 'erp_parcels_id_seq',
+  'erp_despatch_lines_id_seq', 'erp_despatches_id_seq',
+  'erp_goods_in_lines_id_seq', 'erp_goods_in_id_seq',
+  'erp_so_po_allocations_id_seq',
+  'erp_sales_order_lines_id_seq', 'erp_sales_orders_id_seq',
+  'erp_purchase_order_lines_id_seq', 'erp_purchase_orders_id_seq',
+  'erp_stock_movements_id_seq', 'erp_product_serials_id_seq', 'erp_stock_levels_id_seq',
+  'erp_bank_transactions_id_seq',
+  'erp_customer_contacts_id_seq', 'erp_customer_addresses_id_seq', 'erp_customers_id_seq',
+  'erp_supplier_contacts_id_seq', 'erp_supplier_addresses_id_seq', 'erp_suppliers_id_seq',
+  'erp_archived_documents_id_seq'
 ];
 
 export default async function handler(req, res) {
@@ -52,15 +77,33 @@ export default async function handler(req, res) {
 
   const sql = neon(process.env.DATABASE_URL);
   const before = await countAll(sql);
+  const productsBefore = await countProducts(sql);
 
   try {
-    // Single TRUNCATE with all tables — atomic, resets SERIAL sequences.
-    await sql(`TRUNCATE ${WIPE_TABLES.join(', ')} RESTART IDENTITY CASCADE`);
+    // DELETE in FK-safe order, then reset sequences. NEVER use TRUNCATE
+    // CASCADE here — it would cascade through manufacturer_id and wipe
+    // erp_products.
+    for (const t of WIPE_TABLES) {
+      await sql(`DELETE FROM ${t}`);
+    }
+    for (const seq of SEQUENCES_TO_RESET) {
+      try { await sql(`ALTER SEQUENCE ${seq} RESTART WITH 1`); } catch { /* sequence may not exist */ }
+    }
   } catch (err) {
     return res.status(500).json({ ok: false, error: err.message, before });
   }
 
   const after = await countAll(sql);
+  const productsAfter = await countProducts(sql);
+
+  // Sanity check: products must not have changed.
+  if (productsAfter !== productsBefore) {
+    return res.status(500).json({
+      ok: false,
+      error: `Products count changed from ${productsBefore} to ${productsAfter} — aborting.`,
+      before, after
+    });
+  }
   return res.status(200).json({
     ok: true,
     wiped_tables: WIPE_TABLES,
@@ -85,4 +128,11 @@ async function countAll(sql) {
     }
   }
   return counts;
+}
+
+async function countProducts(sql) {
+  try {
+    const [{ n }] = await sql(`SELECT COUNT(*)::int AS n FROM erp_products`);
+    return n;
+  } catch { return null; }
 }
