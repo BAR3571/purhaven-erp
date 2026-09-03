@@ -32,6 +32,17 @@
   </div>
 </div>
 
+<div class="card accent-purple" id="revolut-card" style="display:none;">
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <div>
+      <h2 style="margin:0;">🔗 Revolut Business bank feed</h2>
+      <div id="revolut-status" style="color:var(--ink-soft); font-size:0.88rem; margin-top:4px;"></div>
+    </div>
+    <div id="revolut-actions" style="display:flex; gap:8px;"></div>
+  </div>
+  <div id="revolut-sync-msg" style="margin-top:10px;"></div>
+</div>
+
 <div id="cash-strip" class="acc-grid"></div>
 
 <div class="card accent-green">
@@ -262,7 +273,42 @@
     await Promise.all([loadExpenses(), loadSummary()]);
   });
 
-  await Promise.all([loadSummary(), loadExpenses(), loadBanks()]);
+  async function loadRevolut() {
+    const card = document.getElementById('revolut-card');
+    const statusEl = document.getElementById('revolut-status');
+    const actionsEl = document.getElementById('revolut-actions');
+    try {
+      const r = await fetch('/api/admin/revolut-status'); const d = await r.json();
+      // If not configured we hide the card entirely — env vars need to be set
+      if (!d.configured) { card.style.display = 'none'; return; }
+      card.style.display = '';
+      if (!d.connected) {
+        statusEl.innerHTML = 'Not connected yet — click <strong>Connect</strong> to authorise the bank feed.';
+        actionsEl.innerHTML = '<a class="btn btn-primary" href="/api/admin/revolut-connect">🔗 Connect Revolut</a>';
+        return;
+      }
+      const last = d.last_sync_at ? 'last sync ' + dateOnly(d.last_sync_at) : 'never synced';
+      const accts = (d.revolut_accounts || []).map(a => `${a.currency} · ${a.name || a.state}`).join(' · ');
+      statusEl.innerHTML = `Connected (${d.mode}) · ${accts || 'no accounts visible'} · ${last}.`;
+      actionsEl.innerHTML = `
+        <button type="button" class="btn btn-primary" id="revolut-sync-btn">↻ Sync now</button>
+        <a class="btn btn-ghost" href="/api/admin/revolut-connect">Re-connect</a>
+      `;
+      document.getElementById('revolut-sync-btn').addEventListener('click', async () => {
+        const msg = document.getElementById('revolut-sync-msg');
+        msg.innerHTML = '<p style="color:var(--ink-soft);">Syncing last 30 days…</p>';
+        const r = await fetch('/api/accounts/revolut-sync', { method: 'POST' });
+        const d = await r.json();
+        if (!d.ok) { msg.innerHTML = `<p style="color:#b32a2a;">Sync failed: ${d.error}</p>`; return; }
+        msg.innerHTML = `<p style="color:var(--green);">Synced ${d.transactions_seen} transactions · ${d.inserted} new · ${d.matched} auto-matched · ${d.unmatched} need review${d.unknown_account ? ` · ${d.unknown_account} on unlinked accounts` : ''}.</p>`;
+        await Promise.all([loadSummary(), loadExpenses(), loadBanks(), loadRevolut()]);
+      });
+    } catch {
+      card.style.display = 'none';
+    }
+  }
+
+  await Promise.all([loadSummary(), loadExpenses(), loadBanks(), loadRevolut()]);
 </script>
 
 </body>

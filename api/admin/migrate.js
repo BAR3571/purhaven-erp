@@ -627,7 +627,28 @@ const MIGRATIONS = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   `CREATE INDEX IF NOT EXISTS erp_bank_txn_date_idx ON erp_bank_transactions(txn_date DESC)`,
-  `CREATE INDEX IF NOT EXISTS erp_bank_txn_account_idx ON erp_bank_transactions(bank_account_id)`
+  `CREATE INDEX IF NOT EXISTS erp_bank_txn_account_idx ON erp_bank_transactions(bank_account_id)`,
+
+  // ---------- Revolut Business API tokens (Sprint 2) ----------
+  // Singleton row (id=1) holding the OAuth tokens for the connected Revolut
+  // Business account. Access tokens expire in 40 min; refresh_token lasts 90
+  // days. lib/revolut-bank.js auto-refreshes and stamps updated_at.
+  `CREATE TABLE IF NOT EXISTS erp_revolut_tokens (
+    id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    access_token TEXT NOT NULL,
+    refresh_token TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    scope TEXT,
+    last_sync_at TIMESTAMPTZ,
+    connected_by INTEGER REFERENCES erp_users(id),
+    connected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  // Link a Revolut account UUID to one of our erp_bank_accounts rows so we
+  // know where to slot incoming transactions.
+  `ALTER TABLE erp_bank_accounts ADD COLUMN IF NOT EXISTS revolut_account_id TEXT`,
+  `CREATE INDEX IF NOT EXISTS erp_bank_revolut_idx ON erp_bank_accounts(revolut_account_id)`
 ];
 
 export default async function handler(req, res) {
