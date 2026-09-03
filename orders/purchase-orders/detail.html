@@ -179,6 +179,8 @@
     if (['draft', 'released', 'part_received'].includes(po.status)) buttons.push(`<button type="button" class="btn btn-danger" data-act="cancel">Cancel</button>`);
     if (['part_received', 'received'].includes(po.status)) buttons.push(`<button type="button" class="btn btn-ghost" data-act="close">Close</button>`);
     if (po.status === 'draft' && po.lines.length === 0) buttons.push(`<button type="button" class="btn btn-danger" data-act="delete">Delete</button>`);
+    // Cancelled POs can be reopened — cancel doesn't unwind anything, so this is safe.
+    if (po.status === 'cancelled') buttons.push(`<button type="button" class="btn btn-primary" data-act="reopen">↺ Reopen</button>`);
     actionsEl.innerHTML = buttons.join(' ');
 
     // Remove any stale stamp before adding a fresh one
@@ -544,14 +546,22 @@ MAP-2026-0002"></textarea>
     }
     if (act === 'email') {
       const supplierName = currentPo.supplier_name || 'the supplier';
-      const defaultTo = ''; // let the server look up the primary contact
       const to = prompt(
         `Email this PO PDF to ${supplierName}?\n\nLeave blank to send to the supplier's primary contact,\nor type an email address to override:`,
-        defaultTo
+        ''
       );
       if (to === null) return; // cancelled
+
       btn.disabled = true;
-      btn.textContent = 'Sending…';
+      btn.textContent = '⏳ Sending…';
+      setStatus(`Sending PO to ${supplierName}… this can take 10–20 seconds (PDF + email + SharePoint archive). Please wait — do NOT cancel the PO if this looks slow.`, 'ok');
+
+      // Fallback safety-net: if the button stays disabled >45s, warn but don't
+      // touch state — the request may still be in flight.
+      const stuckWarn = setTimeout(() => {
+        setStatus('Email is taking longer than usual. Do not cancel — check the supplier inbox before retrying.', 'err');
+      }, 45000);
+
       try {
         const r = await fetch('/api/purchase-orders/' + id + '/email', {
           method: 'POST',
@@ -563,16 +573,35 @@ MAP-2026-0002"></textarea>
         setStatus(`✓ Emailed to ${d.sent_to}${d.archive_error ? ' (archive: ' + d.archive_error + ')' : d.archived ? ' · archived to SharePoint' : ''}`, 'ok');
         load();
       } catch (err) {
-        setStatus('Email failed: ' + err.message, 'err');
+        setStatus('Email request failed: ' + err.message + '. Check the supplier inbox before retrying — the email may still have been sent.', 'err');
       } finally {
+        clearTimeout(stuckWarn);
         btn.disabled = false;
+        btn.textContent = currentPo.po_email_sent_at ? '📧 Re-send to supplier' : '📧 Email to supplier';
       }
       return;
     }
+
+    // Stronger confirmation for cancel when a PO has already been emailed to
+    // the supplier — that's the exact scenario where a mis-click hurts.
+    if (act === 'cancel' && currentPo.po_email_sent_at) {
+      const confirmText = 'CANCEL';
+      const typed = prompt(
+        `⚠ This PO has already been emailed to ${currentPo.po_email_to || 'the supplier'} on ${new Date(currentPo.po_email_sent_at).toLocaleString('en-GB')}.\n\n` +
+        `Cancelling now means the supplier still thinks the order is live — you must contact them separately.\n\n` +
+        `Type CANCEL (in capitals) to confirm, or click Cancel to keep the PO open:`
+      );
+      if (typed !== confirmText) {
+        if (typed !== null) setStatus('Cancel not confirmed — PO stays open.', 'ok');
+        return;
+      }
+    }
+
     const prompts = {
       release: 'Release this PO to the supplier? Once released, the supplier ref locks for audit.',
       cancel:  'Cancel this PO?',
-      close:   'Close this PO? Use when the remaining qty will not be delivered.'
+      close:   'Close this PO? Use when the remaining qty will not be delivered.',
+      reopen:  'Reopen this cancelled PO? It will go back to its previous status (released / part_received / draft).'
     };
     if (!confirm(prompts[act])) return;
     const r = await fetch('/api/purchase-orders/' + id + '/status', {

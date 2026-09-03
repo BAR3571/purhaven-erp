@@ -9,7 +9,11 @@ import { recomputePoTotals } from '../../../lib/purchase-orders.js';
 const ALLOWED_FROM = {
   release: ['draft'],
   cancel:  ['draft', 'released', 'part_received'],
-  close:   ['part_received', 'received']
+  close:   ['part_received', 'received'],
+  // 'reopen' reverts a cancel. Safe because cancel doesn't unwind anything —
+  // it only flips the status flag. If the PO had already been received against,
+  // we send it back to 'part_received' rather than 'released'.
+  reopen:  ['cancelled']
 };
 
 export default async function handler(req, res) {
@@ -44,6 +48,26 @@ export default async function handler(req, res) {
     await sql`UPDATE erp_purchase_orders SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW() WHERE id = ${id}`;
   } else if (action === 'close') {
     await sql`UPDATE erp_purchase_orders SET status = 'closed', closed_at = NOW(), updated_at = NOW() WHERE id = ${id}`;
+  } else if (action === 'reopen') {
+    // Restore to the pre-cancel state. If any qty was received, send to
+    // part_received; otherwise back to released (or draft if never released).
+    const totalReceived = po.total_received_before_cancel ?? 0;
+    let newStatus = 'released';
+    if (!po.released_at) newStatus = 'draft';
+    else {
+      const [{ received_qty }] = await sql`
+        SELECT COALESCE(SUM(quantity_received), 0)::int AS received_qty
+        FROM erp_purchase_order_lines WHERE po_id = ${id}
+      `;
+      if (received_qty > 0) newStatus = 'part_received';
+    }
+    await sql`
+      UPDATE erp_purchase_orders
+      SET status = ${newStatus},
+          cancelled_at = NULL,
+          updated_at = NOW()
+      WHERE id = ${id}
+    `;
   }
 
   const updated = await sql`SELECT status FROM erp_purchase_orders WHERE id = ${id}`;
