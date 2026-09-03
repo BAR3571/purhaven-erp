@@ -168,10 +168,36 @@
     const buttons = [];
     if (po.status === 'draft') buttons.push(`<button type="button" class="btn btn-primary" data-act="release">Release to supplier</button>`);
     if (['released', 'part_received'].includes(po.status)) buttons.push(`<button type="button" class="btn btn-primary" data-act="receive">↘ Receive stock</button>`);
+    // View + email PDF — visible on any non-draft PO (or draft with lines, as a preview)
+    if (po.lines.length > 0) {
+      buttons.push(`<a class="btn btn-ghost" href="/api/purchase-orders/${po.id}/paperwork/po" target="_blank" rel="noopener">📄 View PO PDF</a>`);
+    }
+    if (['released', 'part_received', 'received'].includes(po.status)) {
+      const emailLabel = po.po_email_sent_at ? '📧 Re-send to supplier' : '📧 Email to supplier';
+      buttons.push(`<button type="button" class="btn btn-primary" data-act="email">${emailLabel}</button>`);
+    }
     if (['draft', 'released', 'part_received'].includes(po.status)) buttons.push(`<button type="button" class="btn btn-danger" data-act="cancel">Cancel</button>`);
     if (['part_received', 'received'].includes(po.status)) buttons.push(`<button type="button" class="btn btn-ghost" data-act="close">Close</button>`);
     if (po.status === 'draft' && po.lines.length === 0) buttons.push(`<button type="button" class="btn btn-danger" data-act="delete">Delete</button>`);
     actionsEl.innerHTML = buttons.join(' ');
+
+    // Remove any stale stamp before adding a fresh one
+    const oldStamp = document.getElementById('po-email-stamp');
+    if (oldStamp) oldStamp.remove();
+
+    // Show a "last emailed" line under the actions when applicable
+    if (po.po_email_sent_at) {
+      const when = new Date(po.po_email_sent_at).toLocaleString('en-GB');
+      const to = po.po_email_to || '(unknown)';
+      actionsEl.insertAdjacentHTML('afterend',
+        `<p style="margin:6px 0 0;color:var(--ink-soft);font-size:0.8rem;" id="po-email-stamp">✓ PO PDF emailed to ${escapeText(to)} on ${when}${po.onedrive_folder_url ? ` · <a href="${po.onedrive_folder_url}" target="_blank" rel="noopener">📂 SharePoint folder</a>` : ''}</p>`
+      );
+    }
+  }
+
+  function escapeText(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
   function openReceiveModal(po) {
@@ -514,6 +540,33 @@ MAP-2026-0002"></textarea>
     }
     if (act === 'receive') {
       openReceiveModal(currentPo);
+      return;
+    }
+    if (act === 'email') {
+      const supplierName = currentPo.supplier_name || 'the supplier';
+      const defaultTo = ''; // let the server look up the primary contact
+      const to = prompt(
+        `Email this PO PDF to ${supplierName}?\n\nLeave blank to send to the supplier's primary contact,\nor type an email address to override:`,
+        defaultTo
+      );
+      if (to === null) return; // cancelled
+      btn.disabled = true;
+      btn.textContent = 'Sending…';
+      try {
+        const r = await fetch('/api/purchase-orders/' + id + '/email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(to.trim() ? { to: to.trim() } : {})
+        });
+        const d = await r.json();
+        if (!d.ok) { setStatus('Email failed: ' + d.error, 'err'); return; }
+        setStatus(`✓ Emailed to ${d.sent_to}${d.archive_error ? ' (archive: ' + d.archive_error + ')' : d.archived ? ' · archived to SharePoint' : ''}`, 'ok');
+        load();
+      } catch (err) {
+        setStatus('Email failed: ' + err.message, 'err');
+      } finally {
+        btn.disabled = false;
+      }
       return;
     }
     const prompts = {

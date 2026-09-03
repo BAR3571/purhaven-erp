@@ -648,7 +648,13 @@ const MIGRATIONS = [
   // Link a Revolut account UUID to one of our erp_bank_accounts rows so we
   // know where to slot incoming transactions.
   `ALTER TABLE erp_bank_accounts ADD COLUMN IF NOT EXISTS revolut_account_id TEXT`,
-  `CREATE INDEX IF NOT EXISTS erp_bank_revolut_idx ON erp_bank_accounts(revolut_account_id)`
+  `CREATE INDEX IF NOT EXISTS erp_bank_revolut_idx ON erp_bank_accounts(revolut_account_id)`,
+
+  // ---------- PO email + archive tracking ----------
+  // Stamped when the PO PDF has been emailed to the supplier and archived.
+  `ALTER TABLE erp_purchase_orders ADD COLUMN IF NOT EXISTS po_email_sent_at TIMESTAMPTZ`,
+  `ALTER TABLE erp_purchase_orders ADD COLUMN IF NOT EXISTS po_email_to TEXT`,
+  `ALTER TABLE erp_purchase_orders ADD COLUMN IF NOT EXISTS onedrive_folder_url TEXT`
 ];
 
 export default async function handler(req, res) {
