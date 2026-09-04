@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Journal Entries · PurHaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  .jr-table { width: 100%; border-collapse: collapse; }
+  .jr-table th, .jr-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 0.87rem; text-align: left; }
+  .jr-table th { color: var(--ink-soft); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .jr-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .jr-table .dr { color: var(--ink); font-weight: 600; }
+  .jr-table .cr { color: #b32a2a; font-weight: 600; }
+  .jr-empty { text-align: center; padding: 40px; color: var(--ink-soft); }
+  .modal-form .field { margin-bottom: 10px; }
+  .line-grid { display: grid; grid-template-columns: 90px 1fr 110px 110px; gap: 8px; align-items: end; margin-bottom: 8px; }
+  .line-grid input, .line-grid select { padding: 6px 8px; font-size: 0.85rem; }
+  .line-grid .rm { padding: 4px 8px; }
+  .balance-line { padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 0.9rem; }
+  .balance-line.ok  { background: #f0fdf4; color: #166534; }
+  .balance-line.err { background: #fef2f2; color: #991b1b; }
+  .err { color: #b32a2a; }
+  .ok  { color: var(--green); }
+  .src-pill { display: inline-block; padding: 1px 8px; border-radius: 99px; background: var(--bg); border: 1px solid var(--border); font-size: 0.7rem; color: var(--ink-soft); }
+</style>
+</head>
+<body data-page="accounts">
+
+<div class="page-header">
+  <div>
+    <a href="/accounts" style="color:var(--ink-dim);font-size:0.85rem;">← Accounts</a>
+    <h1 style="margin:4px 0 0;">📓 Journal Entries</h1>
+    <div style="color:var(--ink-soft);margin-top:4px;font-size:0.9rem;">Manual double-entry postings — year-end accruals, opening balances, corrections. Each entry must balance (debits = credits).</div>
+  </div>
+  <div class="actions">
+    <button type="button" class="btn btn-primary" id="new-btn">+ New journal</button>
+  </div>
+</div>
+
+<div id="status-msg" style="margin-bottom:12px;"></div>
+
+<div class="card accent-purple">
+  <div style="display:flex;gap:10px;align-items:end;margin-bottom:10px;flex-wrap:wrap;">
+    <div class="field" style="margin:0;"><label for="f-from">From</label><input type="date" id="f-from"></div>
+    <div class="field" style="margin:0;"><label for="f-to">To</label><input type="date" id="f-to"></div>
+    <div class="field" style="margin:0;"><button type="button" class="btn btn-ghost" id="reload-btn">Reload</button></div>
+    <div class="field" style="margin:0;flex:1;text-align:right;color:var(--ink-soft);font-size:0.85rem;" id="count-note"></div>
+  </div>
+
+  <table class="jr-table" id="jr-table">
+    <thead><tr>
+      <th style="width:60px;">#</th>
+      <th style="width:100px;">Date</th>
+      <th style="width:140px;">Reference</th>
+      <th>Narrative</th>
+      <th style="width:80px;">Lines</th>
+      <th class="num" style="width:110px;">Debit total</th>
+      <th class="num" style="width:110px;">Credit total</th>
+      <th style="width:120px;">Actions</th>
+    </tr></thead>
+    <tbody id="jr-rows"></tbody>
+  </table>
+  <div class="jr-empty" id="jr-empty" style="display:none;">No journal entries in this period.</div>
+</div>
+
+<script type="module">
+  import { mountShell, fmt } from '/app.js';
+  await mountShell();
+
+  const statusEl = document.getElementById('status-msg');
+  const money = pence => (pence < 0 ? '-£' : '£') + (Math.abs(pence)/100).toFixed(2);
+  const setStatus = (msg, cls) => {
+    statusEl.innerHTML = msg ? `<div class="card accent-${cls === 'err' ? 'pink' : 'green'}" style="padding:10px 14px;"><span class="${cls}">${msg}</span></div>` : '';
+    if (msg) setTimeout(() => statusEl.innerHTML = '', 5000);
+  };
+
+  // Default range = year to date
+  const now = new Date();
+  document.getElementById('f-from').value = `${now.getFullYear()}-01-01`;
+  document.getElementById('f-to').value = now.toISOString().slice(0,10);
+
+  let accounts = [];
+  async function loadAccounts() {
+    const r = await fetch('/api/accounts/ledger');
+    const d = await r.json();
+    if (d.ok) accounts = d.accounts.filter(a => a.active).sort((a,b) => a.code.localeCompare(b.code));
+  }
+
+  async function loadEntries() {
+    const from = document.getElementById('f-from').value;
+    const to   = document.getElementById('f-to').value;
+    const r = await fetch(`/api/accounts/journals?from=${from}&to=${to}`);
+    const d = await r.json();
+    if (!d.ok) { setStatus('Load failed: ' + d.error, 'err'); return; }
+    document.getElementById('count-note').textContent = `${d.entries.length} entry${d.entries.length === 1 ? '' : 'ies'}`;
+    const empty = document.getElementById('jr-empty');
+    const rows = document.getElementById('jr-rows');
+    if (d.entries.length === 0) {
+      rows.innerHTML = ''; empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    rows.innerHTML = d.entries.map(e => {
+      const balOk = e.total_debits === e.total_credits;
+      return `
+        <tr>
+          <td class="mono">#${e.id}${e.reversal_of ? ` <span class="src-pill" title="Reverses #${e.reversal_of}">REV</span>` : ''}</td>
+          <td>${new Date(e.entry_date).toLocaleDateString('en-GB')}</td>
+          <td>${fmt(e.reference || '')}</td>
+          <td>${fmt(e.narrative || '')}<div style="color:var(--ink-dim);font-size:0.75rem;">by ${fmt(e.posted_by_name || '—')}</div></td>
+          <td>${e.line_count}</td>
+          <td class="num dr">${money(e.total_debits)}</td>
+          <td class="num cr">${money(e.total_credits)}</td>
+          <td>
+            <button type="button" class="btn btn-ghost" data-view="${e.id}" style="padding:4px 8px;font-size:0.78rem;">View</button>
+            ${!e.reversal_of ? `<button type="button" class="btn btn-ghost" data-reverse="${e.id}" style="padding:4px 8px;font-size:0.78rem;color:#b32a2a;" title="Post a reversing entry today">↺</button>` : ''}
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // Handlers
+  document.getElementById('reload-btn').addEventListener('click', loadEntries);
+  document.getElementById('f-from').addEventListener('change', loadEntries);
+  document.getElementById('f-to').addEventListener('change', loadEntries);
+
+  document.getElementById('jr-rows').addEventListener('click', async (e) => {
+    const view = e.target.closest('[data-view]');
+    const rev  = e.target.closest('[data-reverse]');
+    if (view) openViewModal(parseInt(view.dataset.view, 10));
+    if (rev) {
+      if (!confirm(`Post a reversing journal for entry #${rev.dataset.reverse}?\n\nA new journal will be created today with debits and credits swapped.`)) return;
+      const r = await fetch('/api/accounts/journals', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reverse', id: parseInt(rev.dataset.reverse, 10) })
+      });
+      const d = await r.json();
+      if (!d.ok) { setStatus('Reverse failed: ' + d.error, 'err'); return; }
+      setStatus(`✓ Reversal posted as journal #${d.id}.`, 'ok');
+      loadEntries();
+    }
+  });
+
+  async function openViewModal(id) {
+    const r = await fetch(`/api/accounts/journals?id=${id}`);
+    const d = await r.json();
+    if (!d.ok) { setStatus(d.error, 'err'); return; }
+    const e = d.entry;
+    const totalDr = e.lines.reduce((s,l) => s + l.debit_pence, 0);
+    const totalCr = e.lines.reduce((s,l) => s + l.credit_pence, 0);
+    const linesHtml = e.lines.map(l => `
+      <tr>
+        <td class="mono">${l.code}</td>
+        <td>${fmt(l.account_name)}</td>
+        <td>${fmt(l.description || '')}</td>
+        <td class="num dr">${l.debit_pence > 0 ? money(l.debit_pence) : ''}</td>
+        <td class="num cr">${l.credit_pence > 0 ? money(l.credit_pence) : ''}</td>
+      </tr>
+    `).join('');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="modal-card" style="max-width:720px;max-height:85vh;overflow:auto;" onclick="event.stopPropagation()">
+        <button type="button" class="x" data-close>×</button>
+        <h2 style="margin:0 0 4px;">Journal #${e.id}${e.reversal_of ? ' (reverses #' + e.reversal_of + ')' : ''}</h2>
+        <p style="margin:0 0 10px;color:var(--ink-soft);font-size:0.85rem;">
+          ${new Date(e.entry_date).toLocaleDateString('en-GB')} · ref ${fmt(e.reference || '—')} · by ${fmt(e.posted_by_name || '—')} · posted ${new Date(e.posted_at).toLocaleString('en-GB')}
+        </p>
+        ${e.narrative ? `<p style="margin:0 0 10px;">${fmt(e.narrative)}</p>` : ''}
+        <table class="jr-table"><thead><tr>
+          <th style="width:70px;">Code</th><th>Account</th><th>Description</th><th class="num" style="width:110px;">Debit</th><th class="num" style="width:110px;">Credit</th>
+        </tr></thead><tbody>${linesHtml}</tbody>
+        <tfoot><tr>
+          <td colspan="3" style="text-align:right;font-weight:700;">Totals</td>
+          <td class="num dr" style="font-weight:700;border-top:2px solid var(--ink);">${money(totalDr)}</td>
+          <td class="num cr" style="font-weight:700;border-top:2px solid var(--ink);">${money(totalCr)}</td>
+        </tr></tfoot>
+        </table>
+      </div>
+    `;
+    backdrop.addEventListener('click', ev => { if (ev.target === backdrop || ev.target.dataset.close != null) backdrop.remove(); });
+    document.body.appendChild(backdrop);
+  }
+
+  // New journal modal
+  document.getElementById('new-btn').addEventListener('click', () => openNewModal());
+
+  function accountOptions(selectedCode) {
+    return `<option value="">— pick nominal account —</option>` +
+      accounts.map(a => `<option value="${a.code}" ${selectedCode === a.code ? 'selected' : ''}>${a.code} · ${a.name}</option>`).join('');
+  }
+
+  function lineRow(idx, initial = {}) {
+    return `
+      <div class="line-grid" data-line="${idx}">
+        <div><select class="ln-code">${accountOptions(initial.code)}</select></div>
+        <div><input type="text" class="ln-desc" placeholder="Line description (optional)" value="${initial.description || ''}"></div>
+        <div><input type="number" step="0.01" min="0" class="ln-dr" placeholder="Debit" value="${initial.debit || ''}"></div>
+        <div style="display:flex;gap:4px;">
+          <input type="number" step="0.01" min="0" class="ln-cr" placeholder="Credit" value="${initial.credit || ''}">
+          <button type="button" class="btn btn-danger rm" title="Remove line">×</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function openNewModal() {
+    if (accounts.length === 0) { setStatus('Chart of accounts not loaded — refresh the page.', 'err'); return; }
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="modal-card modal-form" style="max-width:820px;max-height:88vh;overflow:auto;" onclick="event.stopPropagation()">
+        <button type="button" class="x" data-close>×</button>
+        <h2 style="margin:0 0 4px;">New journal entry</h2>
+        <p style="margin:0 0 14px;color:var(--ink-soft);font-size:0.85rem;">
+          Each line hits one nominal account with either a debit or credit. Total debits must equal total credits before you can post.
+        </p>
+        <form id="nj-form">
+          <div style="display:grid;grid-template-columns:150px 200px 1fr;gap:12px;">
+            <div class="field"><label for="nj-date">Date *</label><input type="date" id="nj-date" required></div>
+            <div class="field"><label for="nj-ref">Reference</label><input type="text" id="nj-ref" placeholder="e.g. YE-2027-01"></div>
+            <div class="field"><label for="nj-narr">Narrative</label><input type="text" id="nj-narr" placeholder="What is this journal for?"></div>
+          </div>
+
+          <div style="margin:14px 0 6px;font-weight:600;font-size:0.85rem;">Lines</div>
+          <div class="line-grid" style="font-size:0.72rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;padding-bottom:4px;border-bottom:1px solid var(--border);margin-bottom:8px;">
+            <div>Account</div><div>Description</div><div style="text-align:right;">Debit</div><div style="text-align:right;">Credit</div>
+          </div>
+          <div id="nj-lines">${lineRow(0)}${lineRow(1)}</div>
+          <button type="button" class="btn btn-ghost" id="add-line" style="margin-top:4px;">+ Add line</button>
+
+          <div id="nj-balance" class="balance-line err" style="margin-top:14px;">Debits £0.00 · Credits £0.00 · Difference £0.00</div>
+
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+            <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+            <button type="submit" class="btn btn-primary" id="nj-post" disabled>Post journal</button>
+          </div>
+        </form>
+      </div>
+    `;
+    backdrop.addEventListener('click', ev => { if (ev.target === backdrop || ev.target.dataset.close != null) backdrop.remove(); });
+    document.body.appendChild(backdrop);
+
+    document.getElementById('nj-date').value = new Date().toISOString().slice(0, 10);
+
+    let nextIdx = 2;
+    const linesEl = document.getElementById('nj-lines');
+    const balEl = document.getElementById('nj-balance');
+    const postBtn = document.getElementById('nj-post');
+
+    function recalc() {
+      let dr = 0, cr = 0;
+      linesEl.querySelectorAll('.line-grid').forEach(row => {
+        dr += (parseFloat(row.querySelector('.ln-dr').value) || 0);
+        cr += (parseFloat(row.querySelector('.ln-cr').value) || 0);
+      });
+      const diff = Math.abs(dr - cr);
+      balEl.textContent = `Debits £${dr.toFixed(2)} · Credits £${cr.toFixed(2)} · Difference £${diff.toFixed(2)}`;
+      const balanced = dr > 0 && cr > 0 && Math.round(dr * 100) === Math.round(cr * 100);
+      balEl.className = 'balance-line ' + (balanced ? 'ok' : 'err');
+      postBtn.disabled = !balanced;
+    }
+    linesEl.addEventListener('input', recalc);
+
+    document.getElementById('add-line').addEventListener('click', () => {
+      linesEl.insertAdjacentHTML('beforeend', lineRow(nextIdx++));
+    });
+    linesEl.addEventListener('click', (e) => {
+      const rm = e.target.closest('.rm');
+      if (!rm) return;
+      if (linesEl.querySelectorAll('.line-grid').length <= 2) { alert('At least 2 lines required.'); return; }
+      rm.closest('.line-grid').remove();
+      recalc();
+    });
+
+    document.getElementById('nj-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      postBtn.disabled = true;
+      postBtn.textContent = 'Posting…';
+      try {
+        const lines = [];
+        linesEl.querySelectorAll('.line-grid').forEach(row => {
+          const code = row.querySelector('.ln-code').value.trim();
+          const drVal = parseFloat(row.querySelector('.ln-dr').value) || 0;
+          const crVal = parseFloat(row.querySelector('.ln-cr').value) || 0;
+          if (!code) return;
+          if (drVal === 0 && crVal === 0) return;
+          lines.push({
+            code,
+            description: row.querySelector('.ln-desc').value.trim(),
+            debit_pence:  Math.round(drVal * 100),
+            credit_pence: Math.round(crVal * 100)
+          });
+        });
+        const payload = {
+          entry_date: document.getElementById('nj-date').value,
+          reference:  document.getElementById('nj-ref').value.trim(),
+          narrative:  document.getElementById('nj-narr').value.trim(),
+          lines
+        };
+        const r = await fetch('/api/accounts/journals', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error);
+        backdrop.remove();
+        setStatus(`✓ Posted journal #${d.id}.`, 'ok');
+        loadEntries();
+      } catch (err) {
+        alert('Post failed: ' + (err.message || err));
+        postBtn.disabled = false;
+        postBtn.textContent = 'Post journal';
+      }
+    });
+  }
+
+  await loadAccounts();
+  await loadEntries();
+</script>
+
+</body>
+</html>

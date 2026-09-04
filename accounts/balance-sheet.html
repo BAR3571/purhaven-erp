@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Balance Sheet · PurHaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  .bs-controls { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-bottom: 16px; }
+  .bs-controls .field { margin: 0; }
+  .bs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 900px) { .bs-grid { grid-template-columns: 1fr; } }
+  .bs-section { }
+  .bs-section h2 { margin: 0 0 6px; }
+  .bs-table { width: 100%; border-collapse: collapse; }
+  .bs-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+  .bs-table .code { color: var(--ink-soft); font-variant-numeric: tabular-nums; width: 60px; }
+  .bs-table .num  { text-align: right; font-variant-numeric: tabular-nums; }
+  .bs-table .sub { color: var(--ink-soft); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; padding-top: 10px; }
+  .bs-table .total td { font-weight: 700; border-top: 2px solid var(--ink); font-size: 0.95rem; padding-top: 8px; }
+  .bs-table tr.computed td { color: var(--green); }
+  .bs-check { padding: 12px 16px; border-radius: 8px; margin-top: 12px; font-family: monospace; font-size: 0.9rem; }
+  .bs-check.ok  { background: #f0fdf4; color: #166534; }
+  .bs-check.err { background: #fef2f2; color: #991b1b; }
+  .err { color: #b32a2a; }
+</style>
+</head>
+<body data-page="accounts">
+
+<div class="page-header">
+  <div>
+    <a href="/accounts" style="color:var(--ink-dim);font-size:0.85rem;">← Accounts</a>
+    <h1 style="margin:4px 0 0;">🏛️ Balance Sheet</h1>
+    <div id="subtitle" style="color:var(--ink-soft);margin-top:4px;font-size:0.9rem;">Snapshot of assets, liabilities and equity at a point in time.</div>
+  </div>
+  <div class="actions">
+    <a id="csv-btn" class="btn btn-ghost" href="#">⤓ CSV (P&amp;L)</a>
+  </div>
+</div>
+
+<div id="status-msg" style="margin-bottom:12px;"></div>
+
+<div class="card accent-purple">
+  <form id="bs-form" class="bs-controls">
+    <div class="field"><label for="as-of">As of</label><input type="date" id="as-of" required></div>
+    <div class="field"><button type="submit" class="btn btn-primary">Load</button></div>
+  </form>
+</div>
+
+<div id="bs-body" style="display:none;">
+  <div class="bs-grid">
+    <div class="bs-section card accent-sky">
+      <h2>Assets</h2>
+      <p style="color:var(--ink-soft);font-size:0.8rem;margin:0 0 8px;">What the business owns</p>
+      <table class="bs-table" id="assets-tbl"></table>
+    </div>
+    <div class="bs-section card accent-orange">
+      <h2>Liabilities &amp; Equity</h2>
+      <p style="color:var(--ink-soft);font-size:0.8rem;margin:0 0 8px;">What the business owes + owners' stake</p>
+      <table class="bs-table" id="liab-eq-tbl"></table>
+    </div>
+  </div>
+
+  <div id="bs-check" class="bs-check">Loading…</div>
+</div>
+
+<script type="module">
+  import { mountShell, fmt } from '/app.js';
+  await mountShell();
+
+  const money = pence => (pence < 0 ? '-£' : '£') + (Math.abs(pence)/100).toFixed(2);
+  const statusEl = document.getElementById('status-msg');
+  const setStatus = (msg, cls) => {
+    statusEl.innerHTML = msg ? `<div class="card accent-${cls === 'err' ? 'pink' : 'green'}" style="padding:10px 14px;"><span class="${cls}">${msg}</span></div>` : '';
+    if (msg) setTimeout(() => statusEl.innerHTML = '', 5000);
+  };
+
+  // Default to today
+  document.getElementById('as-of').value = new Date().toISOString().slice(0, 10);
+
+  async function load() {
+    const asOf = document.getElementById('as-of').value;
+    const r = await fetch(`/api/accounts/balance-sheet?as_of=${asOf}`);
+    const d = await r.json();
+    if (!d.ok) { setStatus('Load failed: ' + d.error, 'err'); return; }
+
+    document.getElementById('bs-body').style.display = 'block';
+    document.getElementById('subtitle').textContent = `Snapshot as of ${asOf} · Financial year started ${d.financial_year_start}`;
+    document.getElementById('csv-btn').href = `/api/accounts/export?kind=pnl&from=${d.financial_year_start}&to=${asOf}`;
+
+    const rowsFor = arr => arr.map(a => `
+      <tr class="${a.is_computed ? 'computed' : ''}">
+        <td class="code">${a.code}</td>
+        <td>${fmt(a.name)}${a.is_computed ? ' <span style="color:var(--ink-soft);font-size:0.7rem;">(computed)</span>' : ''}</td>
+        <td class="num">${money(a.balance_pence)}</td>
+      </tr>
+    `).join('');
+
+    const assetsHtml = d.sections.assets.length === 0
+      ? '<tr><td colspan="3" style="color:var(--ink-soft);text-align:center;padding:14px;">No assets</td></tr>'
+      : rowsFor(d.sections.assets)
+        + `<tr class="total"><td colspan="2">TOTAL ASSETS</td><td class="num">${money(d.totals.assets)}</td></tr>`;
+    document.getElementById('assets-tbl').innerHTML = assetsHtml;
+
+    const liabRows = d.sections.liabilities.length > 0
+      ? '<tr><td colspan="3" class="sub">Liabilities</td></tr>' + rowsFor(d.sections.liabilities)
+        + `<tr class="total"><td colspan="2">Total liabilities</td><td class="num">${money(d.totals.liabilities)}</td></tr>`
+      : '';
+    const eqRows = d.sections.equity.length > 0
+      ? '<tr><td colspan="3" class="sub">Equity</td></tr>' + rowsFor(d.sections.equity)
+        + `<tr class="total"><td colspan="2">Total equity</td><td class="num">${money(d.totals.equity)}</td></tr>`
+      : '';
+    const grand = `<tr class="total"><td colspan="2">TOTAL LIABILITIES + EQUITY</td><td class="num">${money(d.totals.liabilities_and_equity)}</td></tr>`;
+    document.getElementById('liab-eq-tbl').innerHTML = (liabRows || '<tr><td colspan="3" style="color:var(--ink-soft);text-align:center;padding:14px;">No liabilities or equity</td></tr>') + eqRows + grand;
+
+    const check = document.getElementById('bs-check');
+    if (d.balances) {
+      check.className = 'bs-check ok';
+      check.textContent = `✓ Balance sheet balances: Assets ${money(d.totals.assets)} = Liabilities + Equity ${money(d.totals.liabilities_and_equity)}`;
+    } else {
+      check.className = 'bs-check err';
+      check.textContent = `⚠ Out of balance: Assets ${money(d.totals.assets)} · Liab+Equity ${money(d.totals.liabilities_and_equity)} · Diff ${money(d.difference_pence)}. Usual causes: missing opening balances (share capital, director loan), bank accounts not wired to nominal, or a manual journal not balanced.`;
+    }
+  }
+
+  document.getElementById('bs-form').addEventListener('submit', (e) => { e.preventDefault(); load(); });
+  await load();
+</script>
+
+</body>
+</html>
