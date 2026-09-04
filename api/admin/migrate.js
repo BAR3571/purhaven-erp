@@ -673,7 +673,19 @@ const MIGRATIONS = [
   `ALTER TABLE erp_sales_orders ADD COLUMN IF NOT EXISTS processing_fee_pence INTEGER`,
   `ALTER TABLE erp_sales_orders ADD COLUMN IF NOT EXISTS payment_bank_account_id INTEGER REFERENCES erp_bank_accounts(id)`,
   `ALTER TABLE erp_sales_orders ADD COLUMN IF NOT EXISTS payment_expense_id INTEGER REFERENCES erp_expenses(id) ON DELETE SET NULL`,
-  `CREATE INDEX IF NOT EXISTS erp_so_paid_at_idx ON erp_sales_orders(paid_at)`
+  `CREATE INDEX IF NOT EXISTS erp_so_paid_at_idx ON erp_sales_orders(paid_at)`,
+
+  // ---------- Bank reconciliation ----------
+  // Per-txn: stamped when the row is ticked off against the real bank statement
+  `ALTER TABLE erp_bank_transactions ADD COLUMN IF NOT EXISTS reconciled_at TIMESTAMPTZ`,
+  `ALTER TABLE erp_bank_transactions ADD COLUMN IF NOT EXISTS reconciled_by INTEGER REFERENCES erp_users(id)`,
+  `ALTER TABLE erp_bank_transactions ADD COLUMN IF NOT EXISTS reconciled_ref TEXT`,
+  `CREATE INDEX IF NOT EXISTS erp_bank_txn_reconciled_idx ON erp_bank_transactions(reconciled_at)`,
+  // Per-account: last date a month-end reconciliation was completed + the
+  // statement closing balance that was agreed. Blocks new txns from landing
+  // in a closed period (soft check on the UI).
+  `ALTER TABLE erp_bank_accounts ADD COLUMN IF NOT EXISTS reconciled_through DATE`,
+  `ALTER TABLE erp_bank_accounts ADD COLUMN IF NOT EXISTS last_reconciled_balance_pence INTEGER`
 ];
 
 export default async function handler(req, res) {

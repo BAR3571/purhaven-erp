@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reconcile · PurHaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  .rc-controls { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-bottom: 16px; }
+  .rc-controls .field { margin: 0; }
+  .rc-controls input, .rc-controls select { padding: 7px 9px; }
+  .rc-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .rc-tile { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .rc-tile .lbl { color: var(--ink-soft); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+  .rc-tile .val { font-size: 1.15rem; font-weight: 700; }
+  .rc-tile.diff-match .val { color: var(--green); }
+  .rc-tile.diff-mismatch .val { color: #b32a2a; }
+  .rc-table { width: 100%; border-collapse: collapse; }
+  .rc-table th, .rc-table td { padding: 7px 8px; border-bottom: 1px solid var(--border); font-size: 0.87rem; text-align: left; }
+  .rc-table th { color: var(--ink-soft); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .rc-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .rc-table .in  { color: var(--green); font-weight: 600; }
+  .rc-table .out { color: #b32a2a; font-weight: 600; }
+  .rc-table tr.reconciled { background: rgba(74,222,128,0.06); }
+  .rc-table tr.reconciled .desc { color: var(--ink-soft); }
+  .rc-check { width: 18px; height: 18px; }
+  .rc-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+  .rc-pill { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 0.7rem; background: var(--bg); border: 1px solid var(--border); color: var(--ink-soft); }
+  .err { color: #b32a2a; }
+  .ok { color: var(--green); }
+  .empty { text-align: center; padding: 30px; color: var(--ink-soft); }
+</style>
+</head>
+<body data-page="accounts">
+
+<div class="page-header">
+  <div>
+    <a href="/accounts" style="color:var(--ink-dim);font-size:0.85rem;">← Accounts</a>
+    <h1 style="margin:4px 0 0;">🧾 Reconcile</h1>
+    <div id="subtitle" style="color:var(--ink-soft);margin-top:4px;font-size:0.9rem;">Tick every ERP transaction against your bank statement, then confirm the closing balance to close the period.</div>
+  </div>
+  <div class="actions">
+    <a id="csv-btn" class="btn btn-ghost" href="#">⤓ CSV</a>
+  </div>
+</div>
+
+<div id="status-msg" style="margin-bottom:12px;"></div>
+
+<div class="card accent-sky">
+  <form id="rc-form" class="rc-controls">
+    <div class="field">
+      <label for="rc-account">Bank account</label>
+      <select id="rc-account" required></select>
+    </div>
+    <div class="field">
+      <label for="rc-month">Month</label>
+      <input type="month" id="rc-month" required>
+    </div>
+    <div class="field">
+      <button type="submit" class="btn btn-primary">Load</button>
+    </div>
+  </form>
+</div>
+
+<div id="rc-body" style="display:none;">
+  <div class="rc-summary">
+    <div class="rc-tile"><div class="lbl">Opening balance</div><div class="val" id="rc-open">—</div></div>
+    <div class="rc-tile"><div class="lbl">Money in</div><div class="val in" id="rc-in">—</div></div>
+    <div class="rc-tile"><div class="lbl">Money out</div><div class="val out" id="rc-out">—</div></div>
+    <div class="rc-tile"><div class="lbl">Closing balance</div><div class="val" id="rc-close">—</div></div>
+    <div class="rc-tile" id="rc-diff-tile"><div class="lbl">Statement match</div><div class="val" id="rc-diff">—</div></div>
+    <div class="rc-tile"><div class="lbl">Reconciled</div><div class="val" id="rc-count">—</div></div>
+  </div>
+
+  <div class="card accent-green">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+      <h2 style="margin:0;">Transactions</h2>
+      <div style="display:flex;gap:8px;">
+        <button type="button" class="btn btn-ghost" id="rc-toggle-all">Tick all unreconciled</button>
+        <button type="button" class="btn btn-sky" id="rc-add-btn">+ Add missing txn</button>
+      </div>
+    </div>
+    <div style="max-height:60vh;overflow:auto;">
+      <table class="rc-table" id="rc-table">
+        <thead><tr>
+          <th style="width:28px;"></th>
+          <th style="width:100px;">Date</th>
+          <th>Description</th>
+          <th style="width:120px;">Matched</th>
+          <th class="num" style="width:110px;">Money in</th>
+          <th class="num" style="width:110px;">Money out</th>
+          <th class="num" style="width:130px;">Running balance</th>
+        </tr></thead>
+        <tbody id="rc-rows"></tbody>
+      </table>
+    </div>
+
+    <div class="rc-actions">
+      <div class="field" style="margin:0;">
+        <label for="rc-stmt-close">Statement closing balance</label>
+        <input type="number" id="rc-stmt-close" step="0.01" placeholder="0.00" style="width:150px;">
+      </div>
+      <button type="button" class="btn btn-primary" id="rc-mark-close">✓ Close month as reconciled</button>
+      <span id="rc-close-msg" style="font-size:0.85rem;"></span>
+    </div>
+  </div>
+</div>
+
+<div id="rc-empty" class="empty" style="display:none;">No transactions in this account for the chosen month.</div>
+
+<script type="module">
+  import { mountShell, fmt } from '/app.js';
+  await mountShell();
+
+  const acctSel = document.getElementById('rc-account');
+  const monthInp = document.getElementById('rc-month');
+  const rcBody = document.getElementById('rc-body');
+  const rcEmpty = document.getElementById('rc-empty');
+  const rowsEl = document.getElementById('rc-rows');
+  const statusEl = document.getElementById('status-msg');
+  const csvBtn = document.getElementById('csv-btn');
+
+  let currentAccount = null;
+  let currentTxns = [];
+  let currentCurrency = 'GBP';
+
+  const money = (pence, cur = currentCurrency) => {
+    const s = cur === 'GBP' ? '£' : cur === 'EUR' ? '€' : cur === 'USD' ? '$' : (cur + ' ');
+    return (pence < 0 ? '-' : '') + s + (Math.abs(pence)/100).toFixed(2);
+  };
+
+  function setStatus(msg, cls) {
+    statusEl.innerHTML = msg ? `<div class="card accent-${cls === 'err' ? 'pink' : 'green'}" style="padding:10px 14px;"><span class="${cls}">${msg}</span></div>` : '';
+    if (msg) setTimeout(() => { statusEl.innerHTML = ''; }, 6000);
+  }
+
+  async function loadAccounts() {
+    const r = await fetch('/api/accounts/bank-accounts');
+    const d = await r.json();
+    if (!d.ok) { setStatus('Failed to load bank accounts', 'err'); return; }
+    acctSel.innerHTML = d.bank_accounts.map(b =>
+      `<option value="${b.id}" data-currency="${b.currency}" data-reconciled-through="${b.reconciled_through || ''}">${fmt(b.name)}${b.provider ? ' (' + fmt(b.provider) + ')' : ''} · ${b.currency}${b.reconciled_through ? ' · reconciled through ' + b.reconciled_through.slice(0,10) : ''}</option>`
+    ).join('');
+    // Default to current month
+    const now = new Date();
+    monthInp.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  }
+
+  function monthBounds(m) {
+    const [yr, mo] = m.split('-').map(Number);
+    const from = `${yr}-${String(mo).padStart(2,'0')}-01`;
+    const nextMonth = new Date(yr, mo, 0); // day 0 of next month = last day this month
+    const to = `${yr}-${String(mo).padStart(2,'0')}-${String(nextMonth.getDate()).padStart(2,'0')}`;
+    return { from, to };
+  }
+
+  async function loadPeriod() {
+    const bankId = acctSel.value;
+    const month = monthInp.value;
+    if (!bankId || !month) return;
+    const { from, to } = monthBounds(month);
+    const r = await fetch(`/api/accounts/bank-transactions?bank_account_id=${bankId}&from=${from}&to=${to}`);
+    const d = await r.json();
+    if (!d.ok) { setStatus('Load failed: ' + d.error, 'err'); return; }
+    currentAccount = d.bank_account;
+    currentCurrency = d.bank_account.currency;
+    currentTxns = d.transactions;
+
+    // CSV export link — bank txns for this month
+    csvBtn.href = `/api/accounts/export?kind=bank-txns&bank_account_id=${bankId}&from=${from}&to=${to}`;
+
+    // Summary tiles
+    document.getElementById('rc-open').textContent = money(d.opening_balance_pence);
+    document.getElementById('rc-in').textContent = money(d.inflow_pence);
+    document.getElementById('rc-out').textContent = money(-Math.abs(d.outflow_pence));
+    document.getElementById('rc-close').textContent = money(d.closing_balance_pence);
+    document.getElementById('rc-count').textContent = `${d.reconciled_count} / ${d.reconciled_count + d.unreconciled_count}`;
+
+    // Statement match tile (recomputes when user types closing balance)
+    updateDiff();
+
+    if (currentTxns.length === 0) {
+      rcBody.style.display = 'none';
+      rcEmpty.style.display = 'block';
+      return;
+    }
+    rcBody.style.display = 'block';
+    rcEmpty.style.display = 'none';
+
+    rowsEl.innerHTML = currentTxns.map(t => {
+      const matched = t.matched_so_number ? `<a href="/orders/sales-orders/detail?id=${t.matched_so_id}">${fmt(t.matched_so_number)}</a>`
+                   : t.matched_po_number ? `<a href="/orders/purchase-orders/detail?id=${t.matched_po_id}">${fmt(t.matched_po_number)}</a>`
+                   : t.matched_expense_category ? `<span class="rc-pill">${fmt(t.matched_expense_category)}</span>`
+                   : '';
+      const inflow = t.amount_pence > 0 ? money(t.amount_pence) : '';
+      const outflow = t.amount_pence < 0 ? money(Math.abs(t.amount_pence)) : '';
+      return `
+        <tr data-tid="${t.id}" class="${t.reconciled_at ? 'reconciled' : ''}">
+          <td><input type="checkbox" class="rc-check" data-tid="${t.id}" ${t.reconciled_at ? 'checked' : ''}></td>
+          <td>${new Date(t.txn_date).toLocaleDateString('en-GB')}</td>
+          <td class="desc">${fmt(t.description || '')}${t.reference ? '<div style="color:var(--ink-dim);font-size:0.75rem;">ref ' + fmt(t.reference) + '</div>' : ''}</td>
+          <td>${matched}</td>
+          <td class="num in">${inflow}</td>
+          <td class="num out">${outflow}</td>
+          <td class="num">${money(t.running_balance_pence)}</td>
+        </tr>
+      `;
+    }).join('');
+
+    // Default stmt closing = ERP closing (starts a match)
+    document.getElementById('rc-stmt-close').value = (d.closing_balance_pence / 100).toFixed(2);
+    updateDiff();
+  }
+
+  function updateDiff() {
+    const closingErp = currentTxns.length > 0 ? currentTxns[currentTxns.length - 1].running_balance_pence : (currentAccount ? currentAccount.opening_balance_pence : 0);
+    const stmtVal = parseFloat(document.getElementById('rc-stmt-close').value);
+    const diffTile = document.getElementById('rc-diff-tile');
+    const diffEl = document.getElementById('rc-diff');
+    if (isNaN(stmtVal)) {
+      diffEl.textContent = 'enter value →';
+      diffTile.classList.remove('diff-match','diff-mismatch');
+      return;
+    }
+    const stmtPence = Math.round(stmtVal * 100);
+    const diff = closingErp - stmtPence;
+    if (diff === 0) {
+      diffEl.textContent = '✓ balanced';
+      diffTile.classList.add('diff-match'); diffTile.classList.remove('diff-mismatch');
+    } else {
+      const sign = diff > 0 ? '+' : '';
+      diffEl.textContent = `${sign}${money(diff)}`;
+      diffTile.classList.add('diff-mismatch'); diffTile.classList.remove('diff-match');
+    }
+  }
+  document.getElementById('rc-stmt-close').addEventListener('input', updateDiff);
+
+  // Tick / untick individual row
+  rowsEl.addEventListener('change', async (e) => {
+    const cb = e.target.closest('.rc-check');
+    if (!cb) return;
+    const tid = parseInt(cb.dataset.tid, 10);
+    const on = cb.checked;
+    cb.disabled = true;
+    try {
+      const r = await fetch('/api/accounts/reconcile', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'mark', txn_ids: [tid], reconciled: on })
+      });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error);
+      cb.closest('tr').classList.toggle('reconciled', on);
+      // Refresh count tile
+      const rowsRec = document.querySelectorAll('.rc-check:checked').length;
+      document.getElementById('rc-count').textContent = `${rowsRec} / ${currentTxns.length}`;
+    } catch (err) {
+      cb.checked = !on;
+      setStatus('Save failed: ' + err.message, 'err');
+    } finally {
+      cb.disabled = false;
+    }
+  });
+
+  // Tick all unreconciled at once
+  document.getElementById('rc-toggle-all').addEventListener('click', async () => {
+    const cbs = [...document.querySelectorAll('.rc-check:not(:checked)')];
+    if (cbs.length === 0) { setStatus('Nothing left to reconcile.', 'ok'); return; }
+    const ids = cbs.map(c => parseInt(c.dataset.tid, 10));
+    const r = await fetch('/api/accounts/reconcile', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'mark', txn_ids: ids, reconciled: true })
+    });
+    const d = await r.json();
+    if (!d.ok) { setStatus('Bulk mark failed: ' + d.error, 'err'); return; }
+    loadPeriod();
+  });
+
+  // Close month
+  document.getElementById('rc-mark-close').addEventListener('click', async () => {
+    const stmtVal = parseFloat(document.getElementById('rc-stmt-close').value);
+    if (isNaN(stmtVal)) { setStatus('Enter the statement closing balance first.', 'err'); return; }
+    const { to } = monthBounds(monthInp.value);
+    if (!confirm(`Mark ${currentAccount.name} reconciled through ${to} at closing balance ${money(Math.round(stmtVal*100))}?\n\nThis blocks new transactions dated on or before this date.`)) return;
+    const r = await fetch('/api/accounts/reconcile', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'complete', bank_account_id: currentAccount.id, through_date: to, statement_closing_balance_pence: Math.round(stmtVal*100) })
+    });
+    const d = await r.json();
+    if (!d.ok) { setStatus(d.error, 'err'); return; }
+    setStatus(`✓ Reconciled ${currentAccount.name} through ${to}.`, 'ok');
+    loadAccounts().then(() => { acctSel.value = currentAccount.id; loadPeriod(); });
+  });
+
+  // Add missing txn modal
+  document.getElementById('rc-add-btn').addEventListener('click', () => openAddModal());
+
+  function openAddModal() {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="modal-card" style="max-width:520px;" onclick="event.stopPropagation()">
+        <button type="button" class="x" data-close>×</button>
+        <h2 style="margin:0 0 4px;">Add missing transaction</h2>
+        <p style="margin:0 0 14px;color:var(--ink-soft);font-size:0.85rem;">Use this to enter a fee, adjustment or forgotten line straight from the bank statement.</p>
+        <form id="add-form">
+          <div class="field-row">
+            <div class="field"><label for="a-date">Date *</label><input type="date" id="a-date" required></div>
+            <div class="field"><label for="a-dir">Direction *</label>
+              <select id="a-dir"><option value="out">Money out</option><option value="in">Money in</option></select>
+            </div>
+          </div>
+          <div class="field"><label for="a-amt">Amount (${currentCurrency}) *</label><input type="number" id="a-amt" required step="0.01" min="0.01" placeholder="0.00"></div>
+          <div class="field"><label for="a-desc">Description *</label><input type="text" id="a-desc" required placeholder="e.g. Revolut monthly fee"></div>
+          <div class="field"><label for="a-ref">Reference</label><input type="text" id="a-ref" placeholder="optional"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+            <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+            <button type="submit" class="btn btn-primary">Add transaction</button>
+          </div>
+        </form>
+      </div>
+    `;
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop || e.target.dataset.close !== undefined) backdrop.remove();
+    });
+    document.body.appendChild(backdrop);
+    // Default date = last day of chosen month
+    const { to } = monthBounds(monthInp.value);
+    backdrop.querySelector('#a-date').value = to;
+
+    backdrop.querySelector('#add-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const amt = Math.round(parseFloat(backdrop.querySelector('#a-amt').value) * 100);
+      const dir = backdrop.querySelector('#a-dir').value;
+      const payload = {
+        bank_account_id: currentAccount.id,
+        txn_date: backdrop.querySelector('#a-date').value,
+        amount_pence: dir === 'in' ? amt : -amt,
+        description: backdrop.querySelector('#a-desc').value.trim(),
+        reference: backdrop.querySelector('#a-ref').value.trim() || null
+      };
+      const r = await fetch('/api/accounts/bank-transactions', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const d = await r.json();
+      if (!d.ok) { alert('Add failed: ' + d.error); return; }
+      backdrop.remove();
+      loadPeriod();
+    });
+  }
+
+  document.getElementById('rc-form').addEventListener('submit', (e) => { e.preventDefault(); loadPeriod(); });
+
+  await loadAccounts();
+</script>
+
+</body>
+</html>
