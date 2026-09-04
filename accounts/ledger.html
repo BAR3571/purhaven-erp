@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nominal Ledger · PurHaven Back Office</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  .lg-grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 1100px) { .lg-grid { grid-template-columns: 1fr; } }
+  .lg-coa { max-height: 78vh; overflow: auto; }
+  .lg-coa .grp { color: var(--ink-soft); text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.06em; padding: 10px 8px 4px; border-bottom: 1px solid var(--border); }
+  .lg-coa .row { display: grid; grid-template-columns: 62px 1fr auto; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 0.87rem; }
+  .lg-coa .row:hover { background: var(--surface-2); }
+  .lg-coa .row.active { background: var(--surface-2); font-weight: 600; }
+  .lg-coa .row .code { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .lg-coa .row .bal { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .lg-coa .row .bal.pos { color: var(--ink); }
+  .lg-coa .row .bal.neg { color: #b32a2a; }
+  .lg-controls { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-bottom: 12px; }
+  .lg-controls .field { margin: 0; }
+  .lg-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .lg-tile { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .lg-tile .lbl { color: var(--ink-soft); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+  .lg-tile .val { font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .lg-table { width: 100%; border-collapse: collapse; }
+  .lg-table th, .lg-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 0.86rem; text-align: left; }
+  .lg-table th { color: var(--ink-soft); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .lg-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .lg-table .dr { color: var(--ink); font-weight: 600; }
+  .lg-table .cr { color: #b32a2a; font-weight: 600; }
+  .lg-empty { text-align: center; padding: 40px; color: var(--ink-soft); }
+  .src-pill { display:inline-block; padding:1px 6px; border-radius:99px; background:var(--bg); border:1px solid var(--border); font-size:0.65rem; color:var(--ink-soft); }
+</style>
+</head>
+<body data-page="accounts">
+
+<div class="page-header">
+  <div>
+    <a href="/accounts" style="color:var(--ink-dim);font-size:0.85rem;">← Accounts</a>
+    <h1 style="margin:4px 0 0;">📚 Nominal Ledger</h1>
+    <div style="color:var(--ink-soft);margin-top:4px;font-size:0.9rem;">Chart of accounts + per-code ledger. Postings aggregated from bank movements, expenses, sales and manual journals.</div>
+  </div>
+  <div class="actions">
+    <a id="tb-btn" class="btn btn-ghost" href="#">📋 Trial balance</a>
+  </div>
+</div>
+
+<div id="status-msg" style="margin-bottom:12px;"></div>
+
+<div class="lg-grid">
+  <!-- Chart of accounts (left column) -->
+  <div class="card accent-purple">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <h2 style="margin:0;">Chart of Accounts</h2>
+      <span id="coa-asof" style="font-size:0.78rem;color:var(--ink-soft);"></span>
+    </div>
+    <div class="lg-coa" id="coa-list">Loading…</div>
+  </div>
+
+  <!-- Ledger detail (right column) -->
+  <div class="card accent-sky" id="detail-card" style="display:none;">
+    <div class="lg-controls">
+      <div class="field"><label>Code</label><input id="d-code" readonly style="width:80px;font-variant-numeric:tabular-nums;"></div>
+      <div class="field" style="flex:1;"><label>Account</label><input id="d-name" readonly></div>
+      <div class="field"><label for="d-from">From</label><input type="date" id="d-from"></div>
+      <div class="field"><label for="d-to">To</label><input type="date" id="d-to"></div>
+      <div class="field">
+        <button type="button" class="btn btn-ghost" data-preset="ytd">YTD</button>
+        <button type="button" class="btn btn-ghost" data-preset="last90">90d</button>
+        <button type="button" class="btn btn-primary" id="d-load">Load</button>
+      </div>
+    </div>
+
+    <div class="lg-summary">
+      <div class="lg-tile"><div class="lbl">Opening</div><div class="val" id="s-open">—</div></div>
+      <div class="lg-tile"><div class="lbl">Debits</div><div class="val" id="s-dr">—</div></div>
+      <div class="lg-tile"><div class="lbl">Credits</div><div class="val" id="s-cr">—</div></div>
+      <div class="lg-tile"><div class="lbl">Closing</div><div class="val" id="s-close">—</div></div>
+    </div>
+
+    <div style="max-height:60vh;overflow:auto;">
+      <table class="lg-table" id="post-table">
+        <thead><tr>
+          <th style="width:95px;">Date</th>
+          <th>Description</th>
+          <th style="width:80px;">Source</th>
+          <th class="num" style="width:110px;">Debit</th>
+          <th class="num" style="width:110px;">Credit</th>
+          <th class="num" style="width:130px;">Running</th>
+        </tr></thead>
+        <tbody id="post-rows"></tbody>
+      </table>
+    </div>
+    <div class="lg-empty" id="post-empty" style="display:none;">No postings in this period.</div>
+  </div>
+
+  <div class="card accent-sky" id="empty-detail">
+    <p style="color:var(--ink-soft);margin:0;">← Pick a nominal account from the chart to see its postings.</p>
+  </div>
+</div>
+
+<script type="module">
+  import { mountShell, fmt } from '/app.js';
+  await mountShell();
+
+  const statusEl = document.getElementById('status-msg');
+  const money = pence => (pence < 0 ? '-£' : '£') + (Math.abs(pence)/100).toFixed(2);
+  const setStatus = (msg, cls) => {
+    statusEl.innerHTML = msg ? `<div class="card accent-${cls === 'err' ? 'pink' : 'green'}" style="padding:10px 14px;"><span class="${cls}">${msg}</span></div>` : '';
+    if (msg) setTimeout(() => statusEl.innerHTML = '', 5000);
+  };
+
+  const TYPE_LABEL = {
+    asset: 'Assets', liability: 'Liabilities', equity: 'Equity',
+    income: 'Income', cogs: 'Cost of sales', overhead: 'Overheads',
+    other_expense: 'Other expense', tax: 'Tax', suspense: 'Suspense'
+  };
+  const TYPE_ORDER = ['asset','liability','equity','income','cogs','overhead','other_expense','tax','suspense'];
+
+  async function loadCoa() {
+    const today = new Date().toISOString().slice(0,10);
+    const r = await fetch(`/api/accounts/ledger?to=${today}`);
+    const d = await r.json();
+    if (!d.ok) { setStatus('Load failed: ' + d.error, 'err'); return; }
+    document.getElementById('coa-asof').textContent = 'as of ' + today;
+    const byType = {};
+    for (const a of d.accounts) (byType[a.type] ||= []).push(a);
+    const el = document.getElementById('coa-list');
+    el.innerHTML = TYPE_ORDER.filter(t => byType[t] && byType[t].length).map(t => {
+      const rows = byType[t].map(a => {
+        const clsB = a.balance_pence >= 0 ? 'pos' : 'neg';
+        return `<div class="row" data-code="${a.code}">
+          <span class="code">${a.code}</span>
+          <span>${fmt(a.name)}</span>
+          <span class="bal ${clsB}">${money(a.balance_pence)}</span>
+        </div>`;
+      }).join('');
+      const sumT = d.totals[t] || 0;
+      return `<div class="grp">${TYPE_LABEL[t]} · total ${money(sumT)}</div>${rows}`;
+    }).join('');
+  }
+
+  document.getElementById('coa-list').addEventListener('click', (e) => {
+    const row = e.target.closest('.row[data-code]');
+    if (!row) return;
+    document.querySelectorAll('.lg-coa .row').forEach(r => r.classList.remove('active'));
+    row.classList.add('active');
+    openDetail(row.dataset.code);
+  });
+
+  // Default to YTD when opening detail
+  function ytd() {
+    const y = new Date().getFullYear();
+    return { from: `${y}-01-01`, to: new Date().toISOString().slice(0,10) };
+  }
+
+  async function openDetail(code) {
+    document.getElementById('empty-detail').style.display = 'none';
+    document.getElementById('detail-card').style.display = 'block';
+    const { from, to } = ytd();
+    document.getElementById('d-from').value = from;
+    document.getElementById('d-to').value = to;
+    document.getElementById('d-code').value = code;
+    await loadDetail();
+  }
+
+  async function loadDetail() {
+    const code = document.getElementById('d-code').value;
+    const from = document.getElementById('d-from').value;
+    const to   = document.getElementById('d-to').value;
+    if (!code) return;
+    const r = await fetch(`/api/accounts/ledger?code=${code}&from=${from}&to=${to}`);
+    const d = await r.json();
+    if (!d.ok) { setStatus('Load failed: ' + d.error, 'err'); return; }
+    document.getElementById('d-name').value = d.account.name + ' (' + d.account.type + ')';
+    document.getElementById('s-open').textContent = money(d.opening_balance_pence);
+    document.getElementById('s-dr').textContent  = money(d.total_debits);
+    document.getElementById('s-cr').textContent  = money(-d.total_credits);
+    document.getElementById('s-close').textContent = money(d.closing_balance_pence);
+
+    const empty = document.getElementById('post-empty');
+    const rowsEl = document.getElementById('post-rows');
+    if (d.postings.length === 0) {
+      rowsEl.innerHTML = ''; empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    rowsEl.innerHTML = d.postings.map(p => {
+      const dr = p.debit_pence > 0 ? money(p.debit_pence) : '';
+      const cr = p.credit_pence > 0 ? money(p.credit_pence) : '';
+      let descLink = fmt(p.description || '');
+      if (p.matched_so_id) descLink = `<a href="/orders/sales-orders/detail?id=${p.matched_so_id}">${descLink}</a>`;
+      else if (p.matched_po_id) descLink = `<a href="/orders/purchase-orders/detail?id=${p.matched_po_id}">${descLink}</a>`;
+      else if (p.src_type === 'sales') descLink = `<a href="/orders/sales-orders/detail?id=${p.src_id}">${descLink}</a>`;
+      return `
+        <tr>
+          <td>${new Date(p.date).toLocaleDateString('en-GB')}</td>
+          <td>${descLink}</td>
+          <td><span class="src-pill">${p.src_type}</span></td>
+          <td class="num dr">${dr}</td>
+          <td class="num cr">${cr}</td>
+          <td class="num">${money(p.running_balance_pence)}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  document.getElementById('d-load').addEventListener('click', loadDetail);
+  document.querySelectorAll('[data-preset]').forEach(b => b.addEventListener('click', () => {
+    const p = b.dataset.preset;
+    const now = new Date();
+    const to = now.toISOString().slice(0,10);
+    let from;
+    if (p === 'ytd')    from = `${now.getFullYear()}-01-01`;
+    if (p === 'last90') from = new Date(Date.now() - 90*864e5).toISOString().slice(0,10);
+    document.getElementById('d-from').value = from;
+    document.getElementById('d-to').value = to;
+    loadDetail();
+  }));
+
+  document.getElementById('tb-btn').addEventListener('click', (e) => {
+    e.preventDefault();
+    // Simple trial-balance modal — pulls the same coa data at today's date
+    fetch(`/api/accounts/ledger?to=${new Date().toISOString().slice(0,10)}`).then(r => r.json()).then(d => {
+      if (!d.ok) { setStatus('Load failed: ' + d.error, 'err'); return; }
+      let totalDr = 0, totalCr = 0;
+      const rows = d.accounts.map(a => {
+        const dr = a.balance_pence > 0 ? a.balance_pence : 0;
+        const cr = a.balance_pence < 0 ? -a.balance_pence : 0;
+        totalDr += dr; totalCr += cr;
+        return `<tr>
+          <td class="code" style="font-variant-numeric:tabular-nums;">${a.code}</td>
+          <td>${fmt(a.name)}</td>
+          <td style="color:var(--ink-soft);">${a.type}</td>
+          <td class="num dr">${dr > 0 ? money(dr) : ''}</td>
+          <td class="num cr">${cr > 0 ? money(cr) : ''}</td>
+        </tr>`;
+      }).join('');
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop';
+      backdrop.innerHTML = `
+        <div class="modal-card" style="max-width:720px;max-height:85vh;overflow:auto;" onclick="event.stopPropagation()">
+          <button type="button" class="x" data-close>×</button>
+          <h2 style="margin:0 0 4px;">Trial balance</h2>
+          <p style="margin:0 0 12px;color:var(--ink-soft);font-size:0.85rem;">Balances of every nominal code as of ${d.as_of}.</p>
+          <table class="lg-table"><thead><tr>
+            <th>Code</th><th>Account</th><th>Type</th><th class="num">Debit</th><th class="num">Credit</th>
+          </tr></thead><tbody>${rows}</tbody>
+          <tfoot><tr>
+            <td colspan="3" style="text-align:right;font-weight:700;">Totals</td>
+            <td class="num dr" style="font-weight:700;border-top:2px solid var(--ink);">${money(totalDr)}</td>
+            <td class="num cr" style="font-weight:700;border-top:2px solid var(--ink);">${money(totalCr)}</td>
+          </tr></tfoot>
+          </table>
+        </div>
+      `;
+      backdrop.addEventListener('click', e => { if (e.target === backdrop || e.target.dataset.close != null) backdrop.remove(); });
+      document.body.appendChild(backdrop);
+    });
+  });
+
+  await loadCoa();
+</script>
+
+</body>
+</html>

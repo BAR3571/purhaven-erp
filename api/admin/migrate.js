@@ -685,7 +685,108 @@ const MIGRATIONS = [
   // statement closing balance that was agreed. Blocks new txns from landing
   // in a closed period (soft check on the UI).
   `ALTER TABLE erp_bank_accounts ADD COLUMN IF NOT EXISTS reconciled_through DATE`,
-  `ALTER TABLE erp_bank_accounts ADD COLUMN IF NOT EXISTS last_reconciled_balance_pence INTEGER`
+  `ALTER TABLE erp_bank_accounts ADD COLUMN IF NOT EXISTS last_reconciled_balance_pence INTEGER`,
+
+  // ---------- Nominal ledger (Chart of Accounts) ----------
+  // Small-Ltd-friendly starter chart. Codes follow the common UK convention:
+  //   1xxx assets / 2xxx liabilities / 3xxx equity / 4xxx income / 5xxx cogs
+  //   6xxx overheads / 7xxx other expense / 8xxx tax / 9xxx suspense
+  // Nothing enforces double-entry yet — each posting is a single row (assets
+  // and expenses positive, liabilities and income negative, mirroring how
+  // bookkeepers read a T-account by sign). The accountant translates to
+  // formal debits/credits at year-end. Journal entries UI lets the user
+  // post manual adjustments in 2+ balanced legs.
+  `CREATE TABLE IF NOT EXISTS erp_nominal_accounts (
+    id SERIAL PRIMARY KEY,
+    code TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('asset','liability','equity','income','cogs','overhead','other_expense','tax','suspense')),
+    parent_code TEXT,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS erp_nominal_type_idx ON erp_nominal_accounts(type)`,
+
+  // Starter chart — safe to re-run (ON CONFLICT DO NOTHING keeps user tweaks).
+  `INSERT INTO erp_nominal_accounts (code, name, type) VALUES
+     ('1200', 'Bank — Revolut Business GBP', 'asset'),
+     ('1210', 'Bank — Revolut Business USD', 'asset'),
+     ('1220', 'Bank — Revolut Business EUR', 'asset'),
+     ('1230', 'Bank — Revolut Merchant',    'asset'),
+     ('1100', 'Trade debtors (Accounts receivable)', 'asset'),
+     ('1000', 'Inventory / stock',          'asset'),
+     ('2100', 'Trade creditors (Accounts payable)', 'liability'),
+     ('2200', 'VAT control',                'liability'),
+     ('2300', 'Director loan — VTM UK Ltd', 'liability'),
+     ('2400', 'Corporation tax payable',    'liability'),
+     ('3000', 'Share capital',              'equity'),
+     ('3200', 'Retained earnings',          'equity'),
+     ('4000', 'Sales',                      'income'),
+     ('4100', 'Other income',               'income'),
+     ('5000', 'Cost of sales',              'cogs'),
+     ('5100', 'Delivery / carriage',        'cogs'),
+     ('6100', 'Marketing / advertising',    'overhead'),
+     ('6200', 'Web hosting & subscriptions','overhead'),
+     ('6300', 'Bank / payment fees',        'overhead'),
+     ('6400', 'Professional fees',          'overhead'),
+     ('6500', 'Insurance',                  'overhead'),
+     ('6600', 'Rent',                       'overhead'),
+     ('6700', 'Utilities',                  'overhead'),
+     ('6800', 'Travel',                     'overhead'),
+     ('6900', 'Office supplies',            'overhead'),
+     ('7000', 'Training',                   'overhead'),
+     ('7100', 'Other overhead',             'overhead'),
+     ('9999', 'Suspense',                   'suspense')
+   ON CONFLICT (code) DO NOTHING`,
+
+  // Wire existing rows into the nominal ledger via FKs — bank_accounts,
+  // expense_categories and sales_orders each get a nominal_account_id.
+  `ALTER TABLE erp_bank_accounts       ADD COLUMN IF NOT EXISTS nominal_account_id INTEGER REFERENCES erp_nominal_accounts(id)`,
+  `ALTER TABLE erp_expense_categories  ADD COLUMN IF NOT EXISTS nominal_account_id INTEGER REFERENCES erp_nominal_accounts(id)`,
+
+  // Auto-wire expense categories to their nominal codes (idempotent).
+  `UPDATE erp_expense_categories ec
+     SET nominal_account_id = na.id
+     FROM erp_nominal_accounts na
+     WHERE ec.nominal_account_id IS NULL AND (
+       (ec.name = 'Marketing / advertising'    AND na.code = '6100') OR
+       (ec.name = 'Web hosting & subscriptions' AND na.code = '6200') OR
+       (ec.name = 'Bank / payment fees'         AND na.code = '6300') OR
+       (ec.name = 'Professional fees'           AND na.code = '6400') OR
+       (ec.name = 'Insurance'                   AND na.code = '6500') OR
+       (ec.name = 'Rent'                        AND na.code = '6600') OR
+       (ec.name = 'Utilities'                   AND na.code = '6700') OR
+       (ec.name = 'Travel'                      AND na.code = '6800') OR
+       (ec.name = 'Office supplies'             AND na.code = '6900') OR
+       (ec.name = 'Training'                    AND na.code = '7000') OR
+       (ec.name = 'Delivery / carriage'         AND na.code = '5100') OR
+       (ec.name = 'Stock purchases'             AND na.code = '5000') OR
+       (ec.name = 'Other'                       AND na.code = '7100')
+     )`,
+
+  // Journal entries — for manual adjustments (year-end accruals, opening
+  // balances, corrections). Each entry has 2+ balanced lines.
+  `CREATE TABLE IF NOT EXISTS erp_journal_entries (
+    id SERIAL PRIMARY KEY,
+    entry_date DATE NOT NULL,
+    reference TEXT,
+    narrative TEXT,
+    posted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    posted_by INTEGER REFERENCES erp_users(id),
+    reversal_of INTEGER REFERENCES erp_journal_entries(id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS erp_journal_lines (
+    id SERIAL PRIMARY KEY,
+    entry_id INTEGER NOT NULL REFERENCES erp_journal_entries(id) ON DELETE CASCADE,
+    nominal_account_id INTEGER NOT NULL REFERENCES erp_nominal_accounts(id),
+    debit_pence  INTEGER NOT NULL DEFAULT 0 CHECK (debit_pence  >= 0),
+    credit_pence INTEGER NOT NULL DEFAULT 0 CHECK (credit_pence >= 0),
+    description TEXT,
+    CHECK ((debit_pence > 0 AND credit_pence = 0) OR (credit_pence > 0 AND debit_pence = 0))
+  )`,
+  `CREATE INDEX IF NOT EXISTS erp_journal_entry_date_idx ON erp_journal_entries(entry_date DESC)`,
+  `CREATE INDEX IF NOT EXISTS erp_journal_lines_account_idx ON erp_journal_lines(nominal_account_id)`
 ];
 
 export default async function handler(req, res) {
