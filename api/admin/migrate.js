@@ -786,7 +786,20 @@ const MIGRATIONS = [
     CHECK ((debit_pence > 0 AND credit_pence = 0) OR (credit_pence > 0 AND debit_pence = 0))
   )`,
   `CREATE INDEX IF NOT EXISTS erp_journal_entry_date_idx ON erp_journal_entries(entry_date DESC)`,
-  `CREATE INDEX IF NOT EXISTS erp_journal_lines_account_idx ON erp_journal_lines(nominal_account_id)`
+  `CREATE INDEX IF NOT EXISTS erp_journal_lines_account_idx ON erp_journal_lines(nominal_account_id)`,
+
+  // ---------- Promotional pricing ----------
+  // Date-bounded promo price (ex-VAT, in pence). When current date is between
+  // promo_from and promo_to inclusive, /api/public/products exposes this as
+  // the "effective" price so the website shows was/now styling and checkout
+  // charges the promo amount automatically. Outside the window, the standard
+  // sale_price_pence applies. promo_label is for the badge text ("Winter
+  // Special", "Launch offer" etc).
+  `ALTER TABLE erp_products ADD COLUMN IF NOT EXISTS promo_price_pence INTEGER`,
+  `ALTER TABLE erp_products ADD COLUMN IF NOT EXISTS promo_from DATE`,
+  `ALTER TABLE erp_products ADD COLUMN IF NOT EXISTS promo_to DATE`,
+  `ALTER TABLE erp_products ADD COLUMN IF NOT EXISTS promo_label TEXT`,
+  `CREATE INDEX IF NOT EXISTS erp_products_promo_window_idx ON erp_products(promo_from, promo_to) WHERE promo_price_pence IS NOT NULL`
 ];
 
 export default async function handler(req, res) {

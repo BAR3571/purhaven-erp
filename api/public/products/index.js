@@ -27,6 +27,7 @@ export default async function handler(req, res) {
       p.sale_price_pence, p.vat_rate_percent, p.currency,
       p.weight_g, p.hs_code, p.country_of_origin,
       p.service_interval_months, p.requires_serial,
+      p.promo_price_pence, p.promo_from, p.promo_to, p.promo_label,
       parent.sku AS parent_sku
     FROM erp_products p
     LEFT JOIN erp_products parent ON parent.id = p.parent_id
@@ -38,16 +39,49 @@ export default async function handler(req, res) {
     ORDER BY p.brand ASC, p.name ASC
   `;
 
-  // Add a couple of convenience computed fields so callers don't have to do maths
+  // Add a couple of convenience computed fields so callers don't have to do maths.
+  // Also resolves promotional pricing — if the current date (UK) falls between
+  // promo_from and promo_to inclusive AND a promo_price is set, effective_* is
+  // the promo price; otherwise effective_* equals the standard sale price.
+  const todayUK = new Date(new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' }));
+  const todayISO = todayUK.toISOString().slice(0, 10);
+
   const products = rows.map(p => {
-    const ex = p.sale_price_pence;
     const vatRate = p.vat_rate_percent ?? 20;
-    const inc = Math.round(ex * (1 + vatRate / 100));
+    const sale_ex = p.sale_price_pence;
+    const sale_inc = Math.round(sale_ex * (1 + vatRate / 100));
+
+    const promoFromISO = p.promo_from ? new Date(p.promo_from).toISOString().slice(0, 10) : null;
+    const promoToISO   = p.promo_to   ? new Date(p.promo_to  ).toISOString().slice(0, 10) : null;
+    const promoActive = !!(
+      p.promo_price_pence &&
+      promoFromISO && promoToISO &&
+      promoFromISO <= todayISO && todayISO <= promoToISO
+    );
+
+    const promo_ex   = promoActive ? p.promo_price_pence : null;
+    const promo_inc  = promo_ex != null ? Math.round(promo_ex * (1 + vatRate / 100)) : null;
+    const eff_ex     = promo_ex != null ? promo_ex : sale_ex;
+    const eff_inc    = Math.round(eff_ex * (1 + vatRate / 100));
+
+    const fmt = pence => '£' + (pence / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
     return {
       ...p,
-      sale_price_pence_inc_vat: inc,
-      sale_price_display_inc_vat: '£' + (inc / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-      sale_price_display_ex_vat:  '£' + (ex  / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      // Standard sale price (always = catalogue list price, pre-promo)
+      sale_price_pence_inc_vat: sale_inc,
+      sale_price_display_inc_vat: fmt(sale_inc),
+      sale_price_display_ex_vat:  fmt(sale_ex),
+      // Promo pricing (null when no promo active)
+      promo_active: promoActive,
+      promo_price_pence_inc_vat: promo_inc,
+      promo_price_display_inc_vat: promo_inc != null ? fmt(promo_inc) : null,
+      promo_price_display_ex_vat:  promo_ex  != null ? fmt(promo_ex)  : null,
+      // "Effective" = what the customer actually pays today (promo or sale)
+      effective_price_pence: eff_ex,
+      effective_price_pence_inc_vat: eff_inc,
+      effective_price_display_inc_vat: fmt(eff_inc),
+      effective_price_display_ex_vat:  fmt(eff_ex)
     };
   });
 
